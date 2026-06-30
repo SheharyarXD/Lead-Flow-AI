@@ -41,14 +41,14 @@ export default function Calls() {
   const [directionFilter, setDirectionFilter] = useState("");
   const [showFilters, setShowFilters] = useState(false);
 
-  const { data: calls, isLoading } = trpc.call.list.useQuery({
+  const { data: calls, isLoading } = trpc.calls.list.useQuery({
     organizationId: ORG_ID,
     status: statusFilter || undefined,
     direction: directionFilter || undefined,
     limit: 50,
   });
 
-  const { data: stats } = trpc.call.stats.useQuery({ organizationId: ORG_ID });
+  const { data: stats } = trpc.calls.stats.useQuery({ organizationId: ORG_ID });
 
   const formatDuration = (seconds?: number | null) => {
     if (!seconds) return "0s";

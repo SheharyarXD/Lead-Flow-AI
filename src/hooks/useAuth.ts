@@ -14,7 +14,6 @@ export function useAuth(options?: UseAuthOptions) {
 
   const navigate = useNavigate();
 
-  const utils = trpc.useUtils();
 
   const {
     data: user,
@@ -27,9 +26,8 @@ export function useAuth(options?: UseAuthOptions) {
   });
 
   const logoutMutation = trpc.auth.logout.useMutation({
-    onSuccess: async () => {
-      await utils.invalidate();
-      navigate(redirectPath);
+    onSuccess: () => {
+      window.location.href = "/login";
     },
   });
 
