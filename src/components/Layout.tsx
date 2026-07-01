@@ -1,42 +1,37 @@
 import { useAuth } from "@/hooks/useAuth";
 import { Outlet, useLocation, useNavigate } from "react-router";
+import { trpc } from "@/providers/trpc";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useState, useEffect, useRef } from "react";
-// Theme toggle removed - using system default
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import {
-  LayoutDashboard,
+  Home,
   MessageSquare,
   Users,
   Phone,
   Calendar,
-  CheckSquare,
-  Settings,
   Shield,
   LogOut,
   Menu,
   PhoneCall,
-  Bot,
+  Bell,
+  HelpCircle,
+  Settings,
+  Search,
+  CheckSquare,
 } from "lucide-react";
 
 const navItems = [
-  { icon: LayoutDashboard, label: "Dashboard", path: "/" },
+  { icon: Home, label: "Home", path: "/" },
   { icon: MessageSquare, label: "Conversations", path: "/conversations" },
   { icon: Users, label: "Leads", path: "/leads" },
   { icon: Phone, label: "Calls", path: "/calls" },
   { icon: Calendar, label: "Calendar", path: "/calendar" },
   { icon: CheckSquare, label: "Tasks", path: "/tasks" },
-  { icon: Settings, label: "Settings", path: "/settings" },
 ];
 
 export default function Layout() {
@@ -46,6 +41,29 @@ export default function Layout() {
   const isMobile = useIsMobile();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
+
+  const { data: subscription, isLoading: subLoading } = trpc.organization.getDefaultSubscription.useQuery(undefined, {
+    enabled: !!user,
+  });
+
+  const getTrialDays = () => {
+    if (subLoading) return { label: "loading...", percent: 0 };
+    if (!subscription) return { label: "No Active Plan", percent: 0 };
+
+    const end = subscription.currentPeriodEnd
+      ? new Date(subscription.currentPeriodEnd)
+      : new Date(new Date(subscription.createdAt).getTime() + 30 * 24 * 60 * 60 * 1000);
+
+    const diffTime = end.getTime() - Date.now();
+    const daysRemaining = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+    const percent = Math.min(100, Math.max(0, (daysRemaining / 30) * 100));
+
+    return {
+      label: `${daysRemaining} days left`,
+      percent,
+    };
+  };
+  const trialDays = getTrialDays();
 
   useEffect(() => {
     if (isMobile) setSidebarOpen(false);
@@ -63,10 +81,10 @@ export default function Layout() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex items-center justify-center min-h-screen bg-[#fcfcfd]">
         <div className="flex flex-col items-center gap-4">
-          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-          <p className="text-muted-foreground text-sm">Loading...</p>
+          <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+          <p className="text-zinc-500 text-sm">Loading...</p>
         </div>
       </div>
     );
@@ -78,52 +96,61 @@ export default function Layout() {
   }
 
   return (
-    <div className="flex h-screen bg-background">
+    <div className="flex h-screen bg-[#fcfcfd]">
       {/* Mobile overlay */}
       {sidebarOpen && isMobile && (
-        <div className="fixed inset-0 bg-black/50 z-40" onClick={() => setSidebarOpen(false)} />
+        <div className="fixed inset-0 bg-black/40 z-40" onClick={() => setSidebarOpen(false)} />
       )}
 
       {/* Sidebar */}
       <aside
         ref={sidebarRef}
         className={cn(
-          "fixed inset-y-0 left-0 z-50 w-64 bg-sidebar border-r border-sidebar-border flex flex-col transition-transform duration-200 ease-in-out",
+          "fixed inset-y-0 left-0 z-50 w-60 bg-white border-r border-zinc-200/80 flex flex-col transition-transform duration-200 ease-in-out",
           isMobile && !sidebarOpen && "-translate-x-full",
           !isMobile && "relative translate-x-0"
         )}
       >
         {/* Logo */}
-        <div className="flex items-center gap-3 px-4 h-16 border-b border-sidebar-border shrink-0">
-          <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary">
-            <PhoneCall className="w-4 h-4 text-primary-foreground" />
+        <div className="flex items-center gap-3 px-6 h-16 border-b border-zinc-100 shrink-0">
+          <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-600 text-white shadow-[0_2px_8px_rgba(79,70,229,0.25)]">
+            <PhoneCall className="w-5 h-5" strokeWidth={2.5} />
           </div>
-          <div className="flex flex-col">
-            <span className="text-sm font-semibold text-sidebar-foreground leading-tight">LeadFlow AI</span>
-            <span className="text-[10px] text-sidebar-foreground/60 leading-tight">AI Receptionist</span>
-          </div>
+          <span className="text-base font-bold text-zinc-900 tracking-tight">LeadFlow AI</span>
         </div>
 
         {/* Nav Items */}
-        <ScrollArea className="flex-1 py-3">
+        <ScrollArea className="flex-1 py-4">
           <nav className="px-3 space-y-1">
             {navItems.map((item) => {
-              const isActive = location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
+              const isActive =
+                item.path === "/"
+                  ? location.pathname === "/"
+                  : location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
+
               return (
                 <button
                   key={item.path}
                   onClick={() => navigate(item.path)}
                   className={cn(
-                    "flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                    "flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150",
                     isActive
-                      ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                      : "text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
+                      ? "bg-zinc-100 text-indigo-600 font-semibold"
+                      : "text-zinc-500 hover:text-zinc-950 hover:bg-zinc-50"
                   )}
                 >
-                  <item.icon className={cn("w-4 h-4", isActive && "text-primary")} />
+                  <item.icon
+                    className={cn("w-4 h-4 transition-colors", isActive ? "text-indigo-600" : "text-zinc-400")}
+                    strokeWidth={isActive ? 2.5 : 2}
+                  />
                   <span>{item.label}</span>
                   {item.label === "Conversations" && (
-                    <Badge variant="secondary" className="ml-auto text-[10px] h-5 px-1.5">3</Badge>
+                    <Badge
+                      variant="secondary"
+                      className="ml-auto text-[10px] font-bold h-5 px-1.5 bg-indigo-600 text-white rounded-full border-none shadow-[0_1px_4px_rgba(79,70,229,0.2)]"
+                    >
+                      3
+                    </Badge>
                   )}
                 </button>
               );
@@ -132,77 +159,116 @@ export default function Layout() {
             {/* Admin section */}
             {user.role === "admin" && (
               <>
-                <div className="pt-4 pb-2">
-                  <div className="px-3 text-xs font-semibold text-sidebar-foreground/40 uppercase tracking-wider">
+                <div className="pt-5 pb-1 px-3">
+                  <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
                     Administration
                   </div>
                 </div>
                 <button
                   onClick={() => navigate("/admin")}
                   className={cn(
-                    "flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                    "flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150",
                     location.pathname === "/admin"
-                      ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                      : "text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
+                      ? "bg-zinc-100 text-indigo-600 font-semibold"
+                      : "text-zinc-500 hover:text-zinc-950 hover:bg-zinc-50"
                   )}
                 >
-                  <Shield className={cn("w-4 h-4", location.pathname === "/admin" && "text-primary")} />
-                  <span>Super Admin</span>
+                  <Shield
+                    className={cn(
+                      "w-4 h-4 transition-colors",
+                      location.pathname === "/admin" ? "text-indigo-600" : "text-zinc-400"
+                    )}
+                    strokeWidth={location.pathname === "/admin" ? 2.5 : 2}
+                  />
+                  <span>Superadmin</span>
                 </button>
               </>
             )}
           </nav>
         </ScrollArea>
 
-        {/* AI Status */}
-        <div className="px-3 py-2">
-          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-            <Bot className="w-4 h-4 text-emerald-500" />
-            <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">AI Agent Online</span>
+        {/* Sidebar Footer Widgets */}
+        <div className="border-t border-zinc-100 shrink-0">
+          {/* Trial Status Widget */}
+          <div className="mx-3.5 mt-4 p-3 bg-zinc-50 border border-zinc-100 rounded-xl">
+            <div className="flex justify-between text-xs font-semibold text-zinc-500 mb-1.5">
+              <span>Trial Status</span>
+              <span className="text-indigo-600">{trialDays.label}</span>
+            </div>
+            <div className="h-1.5 w-full bg-zinc-200 rounded-full overflow-hidden">
+              <div className="h-full bg-indigo-600 rounded-full transition-all duration-350" style={{ width: `${trialDays.percent}%` }} />
+            </div>
           </div>
-        </div>
 
-        {/* User */}
-        <div className="p-3 border-t border-sidebar-border shrink-0">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button className="flex items-center gap-3 w-full px-2 py-2 rounded-lg hover:bg-sidebar-accent transition-colors text-left">
-                <Avatar className="w-8 h-8">
-                  <AvatarFallback className="text-xs bg-primary/10 text-primary">
-                    {user.name?.charAt(0).toUpperCase() || "U"}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-sidebar-foreground truncate">{user.name || "User"}</p>
-                  <p className="text-xs text-sidebar-foreground/50 truncate">{user.email || ""}</p>
-                </div>
-                <div className="w-2 h-2 rounded-full bg-emerald-500" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuItem onClick={logout} className="cursor-pointer text-destructive focus:text-destructive">
-                <LogOut className="mr-2 h-4 w-4" />
-                <span>Sign out</span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {/* Logout button */}
+          <button
+            onClick={logout}
+            className="flex items-center gap-3 px-6 py-4 text-sm font-semibold text-zinc-500 hover:text-zinc-950 hover:bg-zinc-50 transition-colors w-full mt-2"
+          >
+            <LogOut className="w-4 h-4 text-zinc-400" />
+            <span>Logout</span>
+          </button>
         </div>
       </aside>
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col min-w-0">
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-[#fcfcfd]">
+        {/* Global Desktop Header */}
+        <header className="hidden lg:flex items-center justify-between px-8 h-16 border-b border-zinc-200 bg-white shrink-0">
+          {/* Search bar */}
+          <div className="flex-1 max-w-md relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+            <input
+              type="text"
+              placeholder="Search leads, conversations..."
+              className="w-full pl-9 pr-4 py-1.5 bg-zinc-50 border border-zinc-200 rounded-lg text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-400 focus:border-zinc-400 transition-all"
+            />
+          </div>
+
+          {/* User & Utilities panel */}
+          <div className="flex items-center gap-4">
+            <Button
+              variant="outline"
+              onClick={() => navigate("/calendar")}
+              className="text-zinc-700 border-zinc-200 h-9 px-4 rounded-lg text-xs font-semibold hover:bg-zinc-50 transition-colors"
+            >
+              + Create Appointment
+            </Button>
+            <div className="w-[1px] h-6 bg-zinc-200" />
+            
+            <button className="relative p-1.5 text-zinc-400 hover:text-zinc-900 transition-colors">
+              <Bell className="w-5 h-5" />
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-white" />
+            </button>
+            
+            <button className="p-1.5 text-zinc-400 hover:text-zinc-900 transition-colors">
+              <HelpCircle className="w-5 h-5" />
+            </button>
+            
+            <button className="p-1.5 text-zinc-400 hover:text-zinc-900 transition-colors" onClick={() => navigate("/settings")}>
+              <Settings className="w-5 h-5" />
+            </button>
+
+            <Avatar className="w-8 h-8 cursor-pointer border border-zinc-200" onClick={() => navigate("/settings")}>
+              <AvatarFallback className="text-xs bg-indigo-50 text-indigo-600 font-bold">
+                {user.name?.charAt(0).toUpperCase() || "U"}
+              </AvatarFallback>
+            </Avatar>
+          </div>
+        </header>
+
         {/* Mobile Header */}
         {isMobile && (
-          <header className="flex items-center gap-3 px-4 h-14 border-b bg-background/95 backdrop-blur shrink-0">
+          <header className="flex items-center gap-3 px-4 h-14 border-b bg-white shrink-0">
             <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(true)}>
-              <Menu className="w-5 h-5" />
+              <Menu className="w-5 h-5 text-zinc-600" />
             </Button>
-            <span className="font-semibold">LeadFlow AI</span>
+            <span className="font-bold text-zinc-900 text-sm">LeadFlow AI</span>
           </header>
         )}
 
         {/* Page Content */}
-        <main className="flex-1 overflow-auto">
+        <main className="flex-1 overflow-auto bg-[#fcfcfd]">
           <Outlet />
         </main>
       </div>

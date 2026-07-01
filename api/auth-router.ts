@@ -75,6 +75,7 @@ export const authRouter = createRouter({
             "Password must contain at least one number",
           ),
         name: z.string().min(2, "Name must be at least 2 characters"),
+        role: z.enum(["admin", "manager", "collector"]).default("admin"),
       }),
     )
     .mutation(async ({ input }) => {
@@ -93,7 +94,7 @@ export const authRouter = createRouter({
         name: input.name,
         passwordHash,
         avatar: "",
-        role: "user",
+        role: input.role === "admin" ? "admin" : "user",
       });
 
       if (!newUser) {
@@ -112,11 +113,15 @@ export const authRouter = createRouter({
       });
 
       if (org) {
-        // Link user as the Owner of the organization
+        // Link user as the selected role of the organization
+        let memberRole: "owner" | "admin" | "manager" | "member" = "owner";
+        if (input.role === "manager") memberRole = "manager";
+        if (input.role === "collector") memberRole = "member";
+
         await addOrganizationMember({
           organizationId: org.id,
           userId: newUser.id,
-          role: "owner",
+          role: memberRole,
           isDefault: true,
         });
 

@@ -67,6 +67,7 @@ export const conversationRouter = createRouter({
         assignedTo: z.number().optional(),
         subject: z.string().optional(),
         aiSummary: z.string().optional(),
+        aiHandled: z.boolean().optional(),
       })
     )
     .mutation(async ({ input }) => {

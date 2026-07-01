@@ -1,5 +1,8 @@
 import { z } from "zod";
 import { createRouter, authedQuery } from "./middleware";
+import { eq } from "drizzle-orm";
+import { subscriptions } from "@db/schema";
+import { getDb } from "./queries/connection";
 import {
   findOrganizationById,
   findUserOrganizations,
@@ -8,11 +11,20 @@ import {
   updateOrganization,
   addOrganizationMember,
   createSubscription,
+  findUserDefaultOrganization,
 } from "./queries/organizations";
 
 export const organizationRouter = createRouter({
   list: authedQuery.query(async ({ ctx }) => {
     return findUserOrganizations(ctx.user.id);
+  }),
+
+  getDefaultSubscription: authedQuery.query(async ({ ctx }) => {
+    const defaultOrg = await findUserDefaultOrganization(ctx.user.id);
+    if (!defaultOrg) return null;
+    return getDb().query.subscriptions.findFirst({
+      where: eq(subscriptions.organizationId, defaultOrg.id),
+    });
   }),
 
   getById: authedQuery

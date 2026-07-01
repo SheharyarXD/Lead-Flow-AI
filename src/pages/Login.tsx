@@ -8,7 +8,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Loader2 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Loader2, PhoneCall } from "lucide-react";
 
 export default function Login() {
   const { user, isLoading: isAuthLoading } = useAuth();
@@ -19,11 +26,12 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
+  const [role, setRole] = useState<"admin" | "manager" | "collector">("admin");
   
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  // Redirect to dashboard if already logged in
+  // Redirection if already authenticated
   useEffect(() => {
     if (!isAuthLoading && user) {
       navigate("/");
@@ -44,10 +52,10 @@ export default function Login() {
     onSuccess: async (data) => {
       setSuccessMessage("Account created successfully! Please sign in with your credentials.");
       setActiveTab("login");
-      // Pre-fill the email address they registered with
       setEmail(data.email || "");
       setPassword("");
       setName("");
+      setRole("admin");
       setError(null);
     },
     onError: (err) => {
@@ -97,38 +105,35 @@ export default function Login() {
       return;
     }
 
-    signupMutation.mutate({ email, password, name });
+    signupMutation.mutate({ email, password, name, role });
   };
 
   const isMutating = loginMutation.isPending || signupMutation.isPending;
 
   if (isAuthLoading) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-[#09090b] text-slate-100">
-        <Loader2 className="w-8 h-8 animate-spin text-zinc-500" />
-        <p className="mt-4 text-sm text-zinc-400">Verifying session...</p>
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#fcfcfd] text-zinc-900">
+        <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
+        <p className="mt-4 text-sm text-zinc-550 font-medium">Verifying session...</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#09090b] text-slate-100 px-4 select-none">
-      <Card className="w-full max-w-md bg-[#0c0c0e] border border-zinc-800/80 shadow-[0_8px_30px_rgb(0,0,0,0.8)] rounded-2xl p-4 sm:p-6 relative overflow-hidden">
-        {/* Glow effect decorative element */}
-        <div className="absolute -top-32 -right-32 w-64 h-64 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none" />
-
-        <CardHeader className="text-center pt-6 pb-8">
+    <div className="min-h-screen flex items-center justify-center bg-[#fcfcfd] text-zinc-900 px-4 select-none">
+      
+      {/* Interactive Card container with smooth lift animation and hover shadow scaling */}
+      <Card className="w-full max-w-md bg-white border border-zinc-200/80 shadow-[0_4px_24px_rgba(0,0,0,0.02)] hover:shadow-[0_12px_36px_rgba(79,70,229,0.06)] rounded-2xl p-4 sm:p-6 transition-all duration-500 hover:-translate-y-0.5">
+        
+        <CardHeader className="text-center pt-6 pb-6 select-none">
           <div className="flex justify-center mb-4">
-            {/* Elegant glowing SVG logo */}
-            <div className="flex items-center justify-center w-14 h-14 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.1)]">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-7 h-7">
-                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
-                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" className="text-emerald-400 stroke-[1.5] opacity-80 animate-pulse" />
-              </svg>
+            {/* Elegant Indigo logo with hover rotation and lift */}
+            <div className="flex items-center justify-center w-14 h-14 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-600 transition-transform duration-500 hover:rotate-12 hover:scale-[1.06]">
+              <PhoneCall className="w-7 h-7 stroke-[2.5]" />
             </div>
           </div>
-          <CardTitle className="text-2xl font-bold tracking-tight text-white">LeadFlow AI</CardTitle>
-          <CardDescription className="text-zinc-500 mt-2 text-sm leading-relaxed">
+          <CardTitle className="text-2xl font-extrabold tracking-tight text-zinc-950">LeadFlow AI</CardTitle>
+          <CardDescription className="text-zinc-500 mt-2 text-xs font-semibold leading-relaxed">
             AI Receptionist & Customer Relationship Manager
           </CardDescription>
         </CardHeader>
@@ -144,26 +149,26 @@ export default function Login() {
             }}
             className="w-full"
           >
-            {/* Vercel-style clean underline tabs to prevent merging layout */}
-            <TabsList className="flex border-b border-zinc-800/80 w-full bg-transparent p-0 mb-8 rounded-none h-auto">
+            {/* Clean Light-theme tabs with hover background highlight and active indicator */}
+            <TabsList className="flex border-b border-zinc-200 w-full bg-transparent p-0 mb-8 rounded-none h-auto select-none">
               <TabsTrigger
                 value="login"
                 disabled={isMutating}
-                className="flex-1 text-center pb-3 text-zinc-400 border-b-2 border-transparent data-[state=active]:border-emerald-500 data-[state=active]:text-emerald-400 data-[state=active]:font-semibold rounded-none bg-transparent hover:text-emerald-400 transition-all text-sm font-medium"
+                className="flex-1 text-center pb-3 text-zinc-400 border-b-2 border-transparent data-[state=active]:border-indigo-650 data-[state=active]:text-indigo-600 data-[state=active]:font-extrabold rounded-none bg-transparent hover:text-indigo-600 hover:bg-zinc-50/50 transition-all duration-200 text-xs font-bold"
               >
                 Sign In
               </TabsTrigger>
               <TabsTrigger
                 value="signup"
                 disabled={isMutating}
-                className="flex-1 text-center pb-3 text-zinc-400 border-b-2 border-transparent data-[state=active]:border-emerald-500 data-[state=active]:text-emerald-400 data-[state=active]:font-semibold rounded-none bg-transparent hover:text-emerald-400 transition-all text-sm font-medium"
+                className="flex-1 text-center pb-3 text-zinc-400 border-b-2 border-transparent data-[state=active]:border-indigo-655 data-[state=active]:text-indigo-600 data-[state=active]:font-extrabold rounded-none bg-transparent hover:text-indigo-600 hover:bg-zinc-50/50 transition-all duration-200 text-xs font-bold"
               >
                 Register
               </TabsTrigger>
             </TabsList>
 
             {successMessage && (
-              <Alert className="mb-6 bg-emerald-950/20 border-emerald-900/30 text-emerald-400 rounded-xl py-3 px-4 shadow-md">
+              <Alert className="mb-6 bg-emerald-50 border-emerald-100 text-emerald-800 rounded-xl py-3 px-4 shadow-sm animate-fade-in">
                 <AlertDescription className="text-xs font-semibold leading-relaxed">
                   {successMessage}
                 </AlertDescription>
@@ -171,8 +176,8 @@ export default function Login() {
             )}
 
             {error && (
-              <Alert variant="destructive" className="mb-6 bg-red-950/25 border-red-900/30 text-red-300 rounded-xl py-3 px-4 shadow-md">
-                <AlertDescription className="text-xs font-medium leading-relaxed">
+              <Alert variant="destructive" className="mb-6 bg-red-50 border-red-100 text-red-800 rounded-xl py-3 px-4 shadow-sm animate-fade-in">
+                <AlertDescription className="text-xs font-semibold leading-relaxed">
                   {error}
                 </AlertDescription>
               </Alert>
@@ -181,7 +186,7 @@ export default function Login() {
             <TabsContent value="login">
               <form onSubmit={handleLoginSubmit} className="space-y-5">
                 <div className="space-y-2">
-                  <Label htmlFor="email" className="text-xs font-medium text-zinc-400">
+                  <Label htmlFor="email" className="text-xs font-bold text-zinc-500">
                     Email Address
                   </Label>
                   <Input
@@ -192,12 +197,12 @@ export default function Login() {
                     onChange={(e) => setEmail(e.target.value)}
                     disabled={isMutating}
                     required
-                    className="bg-[#09090b] border-zinc-800 focus:border-zinc-700 focus:ring-1 focus:ring-zinc-700 rounded-xl text-slate-100 placeholder:text-zinc-600 h-10 px-3.5"
+                    className="bg-white border-zinc-200 text-xs rounded-xl text-zinc-950 placeholder:text-zinc-400 h-10 px-3.5 focus-visible:ring-2 focus-visible:ring-indigo-100 focus-visible:border-indigo-500 transition-all duration-200 shadow-none"
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="login-password" className="text-xs font-medium text-zinc-400">
+                  <Label htmlFor="login-password" className="text-xs font-bold text-zinc-500">
                     Password
                   </Label>
                   <Input
@@ -208,14 +213,14 @@ export default function Login() {
                     onChange={(e) => setPassword(e.target.value)}
                     disabled={isMutating}
                     required
-                    className="bg-[#09090b] border-zinc-800 focus:border-zinc-700 focus:ring-1 focus:ring-zinc-700 rounded-xl text-slate-100 placeholder:text-zinc-600 h-10 px-3.5"
+                    className="bg-white border-zinc-200 text-xs rounded-xl text-zinc-950 placeholder:text-zinc-400 h-10 px-3.5 focus-visible:ring-2 focus-visible:ring-indigo-100 focus-visible:border-indigo-500 transition-all duration-200 shadow-none"
                   />
                 </div>
 
                 <Button
                   type="submit"
                   disabled={isMutating}
-                  className="w-full h-10 rounded-xl font-semibold mt-8 bg-slate-100 text-slate-900 hover:bg-slate-200 transition-all duration-200 active:scale-[0.98] shadow-md text-sm"
+                  className="w-full h-10 rounded-xl font-bold mt-8 bg-indigo-650 hover:bg-indigo-700 text-zinc-950 hover:text-white hover:scale-[1.01] hover:shadow-[0_4px_12px_rgba(79,70,229,0.2)] transition-all duration-250 active:scale-[0.97] shadow-sm text-xs border border-indigo-800/90"
                 >
                   {isMutating ? (
                     <>
@@ -232,7 +237,7 @@ export default function Login() {
             <TabsContent value="signup">
               <form onSubmit={handleSignupSubmit} className="space-y-5">
                 <div className="space-y-2">
-                  <Label htmlFor="signup-name" className="text-xs font-medium text-zinc-400">
+                  <Label htmlFor="signup-name" className="text-xs font-bold text-zinc-500">
                     Your Name
                   </Label>
                   <Input
@@ -243,12 +248,12 @@ export default function Login() {
                     onChange={(e) => setName(e.target.value)}
                     disabled={isMutating}
                     required
-                    className="bg-[#09090b] border-zinc-800 focus:border-zinc-700 focus:ring-1 focus:ring-zinc-700 rounded-xl text-slate-100 placeholder:text-zinc-600 h-10 px-3.5"
+                    className="bg-white border-zinc-200 text-xs rounded-xl text-zinc-950 placeholder:text-zinc-400 h-10 px-3.5 focus-visible:ring-2 focus-visible:ring-indigo-100 focus-visible:border-indigo-500 transition-all duration-200 shadow-none"
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="signup-email" className="text-xs font-medium text-zinc-400">
+                  <Label htmlFor="signup-email" className="text-xs font-bold text-zinc-500">
                     Email Address
                   </Label>
                   <Input
@@ -259,16 +264,32 @@ export default function Login() {
                     onChange={(e) => setEmail(e.target.value)}
                     disabled={isMutating}
                     required
-                    className="bg-[#09090b] border-zinc-800 focus:border-zinc-700 focus:ring-1 focus:ring-zinc-700 rounded-xl text-slate-100 placeholder:text-zinc-600 h-10 px-3.5"
+                    className="bg-white border-zinc-200 text-xs rounded-xl text-zinc-950 placeholder:text-zinc-400 h-10 px-3.5 focus-visible:ring-2 focus-visible:ring-indigo-100 focus-visible:border-indigo-500 transition-all duration-200 shadow-none"
                   />
                 </div>
 
                 <div className="space-y-2">
+                  <Label htmlFor="signup-role" className="text-xs font-bold text-zinc-500">
+                    Role
+                  </Label>
+                  <Select value={role} onValueChange={(val: any) => setRole(val)}>
+                    <SelectTrigger id="signup-role" className="bg-white border-zinc-200 text-xs rounded-xl text-zinc-950 placeholder:text-zinc-400 h-10 px-3.5 shadow-none w-full font-medium focus-visible:ring-2 focus-visible:ring-indigo-100 focus-visible:border-indigo-500 transition-all duration-200">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white border-zinc-200 text-zinc-950">
+                      <SelectItem value="admin" className="focus:bg-zinc-50 focus:text-zinc-950 cursor-pointer">Admin</SelectItem>
+                      <SelectItem value="manager" className="focus:bg-zinc-50 focus:text-zinc-950 cursor-pointer">Manager</SelectItem>
+                      <SelectItem value="collector" className="focus:bg-zinc-50 focus:text-zinc-950 cursor-pointer">Collector</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
                   <div className="flex justify-between items-center">
-                    <Label htmlFor="signup-password" className="text-xs font-medium text-zinc-400">
+                    <Label htmlFor="signup-password" className="text-xs font-bold text-zinc-500">
                       Password
                     </Label>
-                    <span className="text-[10px] text-zinc-500 font-semibold tracking-wide">Min. 6 chars, 1 Capital, 1 Number</span>
+                    <span className="text-[10px] text-zinc-450 font-semibold tracking-wide">Min. 6 chars, 1 Capital, 1 Number</span>
                   </div>
                   <Input
                     id="signup-password"
@@ -278,14 +299,14 @@ export default function Login() {
                     onChange={(e) => setPassword(e.target.value)}
                     disabled={isMutating}
                     required
-                    className="bg-[#09090b] border-zinc-800 focus:border-zinc-700 focus:ring-1 focus:ring-zinc-700 rounded-xl text-slate-100 placeholder:text-zinc-600 h-10 px-3.5"
+                    className="bg-white border-zinc-200 text-xs rounded-xl text-zinc-950 placeholder:text-zinc-400 h-10 px-3.5 focus-visible:ring-2 focus-visible:ring-indigo-100 focus-visible:border-indigo-500 transition-all duration-200 shadow-none"
                   />
                 </div>
 
                 <Button
                   type="submit"
                   disabled={isMutating}
-                  className="w-full h-10 rounded-xl font-semibold mt-8 bg-slate-100 text-slate-900 hover:bg-slate-200 transition-all duration-200 active:scale-[0.98] shadow-md text-sm"
+                  className="w-full h-10 rounded-xl font-bold mt-8 bg-indigo-650 hover:bg-indigo-700 text-zinc-950 hover:text-white hover:scale-[1.01] hover:shadow-[0_4px_12px_rgba(79,70,229,0.2)] transition-all duration-250 active:scale-[0.97] shadow-sm text-xs border border-indigo-800/90"
                 >
                   {isMutating ? (
                     <>
