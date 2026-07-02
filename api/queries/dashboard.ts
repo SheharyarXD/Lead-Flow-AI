@@ -1,5 +1,5 @@
 import { getDb } from "./connection";
-import { leads, conversations, calls, tasks, appointments, activities } from "@db/schema";
+import { leads, conversations, calls, tasks, appointments, activities, subscriptions, organizations } from "@db/schema";
 import { eq, and, gte, desc, count, sql } from "drizzle-orm";
 
 export async function getDashboardStats(organizationId: number) {
@@ -71,6 +71,22 @@ export async function getDashboardStats(organizationId: number) {
     .from(leads)
     .where(eq(leads.organizationId, organizationId));
 
+  // Fetch subscription
+  const subList = await getDb()
+    .select()
+    .from(subscriptions)
+    .where(eq(subscriptions.organizationId, organizationId))
+    .limit(1);
+  const subscription = subList[0] ?? null;
+
+  // Fetch organization config
+  const orgList = await getDb()
+    .select()
+    .from(organizations)
+    .where(eq(organizations.id, organizationId))
+    .limit(1);
+  const organization = orgList[0] ?? null;
+
   return {
     totalLeads: totalLeads[0].count,
     newLeads: newLeads[0].count,
@@ -82,6 +98,8 @@ export async function getDashboardStats(organizationId: number) {
     upcomingAppointments: upcomingAppointments[0].count,
     conversionRate,
     pipelineValue: pipelineValue[0].sum,
+    subscription,
+    organization,
   };
 }
 
@@ -99,18 +117,19 @@ export async function getRecentActivity(organizationId: number, limit = 10) {
 }
 
 export async function getUpcomingTasks(organizationId: number, limit = 5) {
-  const now = new Date();
   return getDb().query.tasks.findMany({
     where: and(
       eq(tasks.organizationId, organizationId),
-      eq(tasks.status, "pending"),
-      gte(tasks.dueDate, now)
+      eq(tasks.status, "pending")
     ),
     with: {
       customer: true,
       lead: true,
     },
-    orderBy: [tasks.dueDate],
+    orderBy: [
+      desc(sql`FIELD(${tasks.priority}, 'low', 'medium', 'high', 'urgent')`),
+      tasks.dueDate,
+    ],
     limit,
   });
 }

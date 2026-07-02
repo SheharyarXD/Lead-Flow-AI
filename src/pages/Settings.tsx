@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { trpc } from "@/providers/trpc";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,7 @@ import {
 const ORG_ID = 1;
 
 export default function Settings() {
+  const utils = trpc.useUtils();
   const { data: org } = trpc.organization.getById.useQuery({ id: ORG_ID });
   const { data: members } = trpc.organization.members.useQuery({ organizationId: ORG_ID });
 
@@ -41,8 +42,11 @@ export default function Settings() {
     aiInstructions: "",
   });
 
+  const [saveBusinessSuccess, setSaveBusinessSuccess] = useState(false);
+  const [saveAiSuccess, setSaveAiSuccess] = useState(false);
+
   // Update forms when org data loads
-  useState(() => {
+  useEffect(() => {
     if (org) {
       setBusinessForm({
         name: org.name || "",
@@ -58,7 +62,51 @@ export default function Settings() {
         aiInstructions: org.aiInstructions || "",
       });
     }
+  }, [org]);
+
+  const updateOrg = trpc.organization.update.useMutation({
+    onSuccess: () => {
+      utils.organization.getById.invalidate({ id: ORG_ID });
+    },
   });
+
+  const handleSaveBusiness = () => {
+    updateOrg.mutate({
+      id: ORG_ID,
+      name: businessForm.name,
+      industry: businessForm.industry,
+      phone: businessForm.phone,
+      email: businessForm.email,
+      website: businessForm.website,
+    }, {
+      onSuccess: () => {
+        setSaveBusinessSuccess(true);
+        setTimeout(() => setSaveBusinessSuccess(false), 3000);
+      }
+    });
+  };
+
+  const handleSaveAi = () => {
+    updateOrg.mutate({
+      id: ORG_ID,
+      aiEnabled: aiForm.aiEnabled,
+      greetingMessage: aiForm.greetingMessage,
+      aiInstructions: aiForm.aiInstructions,
+    }, {
+      onSuccess: () => {
+        setSaveAiSuccess(true);
+        setTimeout(() => setSaveAiSuccess(false), 3000);
+      }
+    });
+  };
+
+  const handleToggleAi = (checked: boolean) => {
+    setAiForm((prev) => ({ ...prev, aiEnabled: checked }));
+    updateOrg.mutate({
+      id: ORG_ID,
+      aiEnabled: checked,
+    });
+  };
 
   return (
     <div className="p-6 space-y-6 max-w-5xl">
@@ -105,33 +153,33 @@ export default function Settings() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Company Name</Label>
-                  <Input value={org?.name || businessForm.name} onChange={(e) => setBusinessForm({ ...businessForm, name: e.target.value })} />
+                  <Input value={businessForm.name} onChange={(e) => setBusinessForm({ ...businessForm, name: e.target.value })} />
                 </div>
                 <div className="space-y-2">
                   <Label>Industry</Label>
-                  <Input value={org?.industry || businessForm.industry} onChange={(e) => setBusinessForm({ ...businessForm, industry: e.target.value })} />
+                  <Input value={businessForm.industry} onChange={(e) => setBusinessForm({ ...businessForm, industry: e.target.value })} />
                 </div>
                 <div className="space-y-2">
                   <Label>Phone Number</Label>
-                  <Input value={org?.phone || businessForm.phone} onChange={(e) => setBusinessForm({ ...businessForm, phone: e.target.value })} />
+                  <Input value={businessForm.phone} onChange={(e) => setBusinessForm({ ...businessForm, phone: e.target.value })} />
                 </div>
                 <div className="space-y-2">
                   <Label>Email</Label>
-                  <Input value={org?.email || businessForm.email} onChange={(e) => setBusinessForm({ ...businessForm, email: e.target.value })} />
+                  <Input value={businessForm.email} onChange={(e) => setBusinessForm({ ...businessForm, email: e.target.value })} />
                 </div>
                 <div className="space-y-2 sm:col-span-2">
                   <Label>Website</Label>
-                  <Input value={org?.website || businessForm.website} onChange={(e) => setBusinessForm({ ...businessForm, website: e.target.value })} />
+                  <Input value={businessForm.website} onChange={(e) => setBusinessForm({ ...businessForm, website: e.target.value })} />
                 </div>
                 <div className="space-y-2 sm:col-span-2">
                   <Label>Timezone</Label>
-                  <Input value={org?.timezone || businessForm.timezone} disabled />
+                  <Input value={businessForm.timezone} disabled />
                   <p className="text-xs text-muted-foreground">Contact support to change timezone.</p>
                 </div>
               </div>
-              <Button>
+              <Button onClick={handleSaveBusiness} disabled={updateOrg.isPending}>
                 <Save className="w-4 h-4 mr-2" />
-                Save Changes
+                {updateOrg.isPending ? "Saving..." : saveBusinessSuccess ? "Saved!" : "Save Changes"}
               </Button>
             </CardContent>
           </Card>
@@ -184,7 +232,8 @@ export default function Settings() {
                   <Label htmlFor="ai-toggle" className="text-sm">Enabled</Label>
                   <Switch
                     id="ai-toggle"
-                    checked={org?.aiEnabled ?? aiForm.aiEnabled}
+                    checked={aiForm.aiEnabled}
+                    onCheckedChange={handleToggleAi}
                   />
                 </div>
               </div>
@@ -193,7 +242,7 @@ export default function Settings() {
               <div className="space-y-2">
                 <Label>Greeting Message</Label>
                 <Input
-                  value={org?.greetingMessage || aiForm.greetingMessage}
+                  value={aiForm.greetingMessage}
                   onChange={(e) => setAiForm({ ...aiForm, greetingMessage: e.target.value })}
                   placeholder="Hello! Thank you for calling..."
                 />
@@ -204,7 +253,7 @@ export default function Settings() {
                 <Label>AI Instructions / Personality</Label>
                 <textarea
                   className="w-full min-h-[120px] px-3 py-2 rounded-md border bg-background text-sm resize-y focus:outline-none focus:ring-2 focus:ring-ring"
-                  value={org?.aiInstructions || aiForm.aiInstructions}
+                  value={aiForm.aiInstructions}
                   onChange={(e) => setAiForm({ ...aiForm, aiInstructions: e.target.value })}
                   placeholder="Describe how the AI should behave..."
                 />
@@ -231,9 +280,9 @@ export default function Settings() {
                 </div>
               </div>
 
-              <Button>
+              <Button onClick={handleSaveAi} disabled={updateOrg.isPending}>
                 <Save className="w-4 h-4 mr-2" />
-                Save AI Settings
+                {updateOrg.isPending ? "Saving..." : saveAiSuccess ? "Saved AI Receptionist!" : "Save AI Settings"}
               </Button>
             </CardContent>
           </Card>
@@ -288,9 +337,9 @@ export default function Settings() {
                         <p className="text-xs text-muted-foreground">{member.user?.email || ""}</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant={member.role === "owner" ? "default" : "outline"} className="text-[10px] capitalize">
-                        {member.role}
+                    <div className="flex items-center gap-2 select-none">
+                      <Badge variant={member.role === "owner" || member.role === "admin" ? "default" : "outline"} className="text-[10px] capitalize">
+                        {member.role === "owner" || member.role === "admin" ? "Admin" : member.role === "manager" ? "Manager" : "Collector"}
                       </Badge>
                     </div>
                   </div>

@@ -1,33 +1,51 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { trpc } from "@/providers/trpc";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
-  CalendarDays,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useNavigate } from "react-router";
+import {
   ChevronLeft,
   ChevronRight,
   Clock,
-  MapPin,
-  User,
   Plus,
+  Phone,
+  Calendar,
+  Trash2,
+  RefreshCw,
+  Tag,
+  X,
 } from "lucide-react";
 
 const ORG_ID = 1;
 
-const typeColors: Record<string, string> = {
-  call: "bg-blue-50 text-blue-700 border-blue-200",
-  meeting: "bg-violet-50 text-violet-700 border-violet-200",
-  demo: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  follow_up: "bg-amber-50 text-amber-700 border-amber-200",
-  consultation: "bg-orange-50 text-orange-700 border-orange-200",
-  other: "bg-gray-50 text-gray-500 border-gray-200",
-};
+export default function CalendarPage() {
+  const navigate = useNavigate();
+  const utils = trpc.useUtils();
 
-export default function Calendar() {
-  const [currentDate, setCurrentDate] = useState(new Date());
+  const [currentDate, setCurrentDate] = useState(new Date(2024, 9, 12)); // Default to October 2024 to match the mockup
+  const [selectedDate, setSelectedDate] = useState(new Date(2024, 9, 12));
+  const [selectedAppt, setSelectedAppt] = useState<any>(null);
+
+  // Filters state
+  const [selectedTeam, setSelectedTeam] = useState<string[]>(["alex", "ai", "sarah"]);
+  const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
+  const [addOpen, setAddOpen] = useState(false);
 
   const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
   const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
@@ -37,30 +55,145 @@ export default function Calendar() {
   const { data: appointments, isLoading } = trpc.appointment.list.useQuery({
     organizationId: ORG_ID,
     startDate: startOfWeek,
-    endDate: new Date(endOfMonth.getTime() + 7 * 24 * 60 * 60 * 1000),
+    endDate: new Date(endOfMonth.getTime() + 14 * 24 * 60 * 60 * 1000), // extend range to cover grid
     limit: 100,
   });
 
   const { data: stats } = trpc.appointment.stats.useQuery({ organizationId: ORG_ID });
 
+  const createAppointment = trpc.appointment.create.useMutation({
+    onSuccess: () => {
+      utils.appointment.list.invalidate();
+      utils.appointment.stats.invalidate();
+      setAddOpen(false);
+      setNewAppt({
+        title: "",
+        description: "",
+        location: "",
+        startTime: "",
+        endTime: "",
+        type: "meeting",
+        customerId: "",
+      });
+    },
+  });
+
+  const deleteMutation = trpc.appointment.delete.useMutation({
+    onSuccess: () => {
+      utils.appointment.list.invalidate();
+      utils.appointment.stats.invalidate();
+      setSelectedAppt(null);
+    },
+  });
+
+  const [newAppt, setNewAppt] = useState({
+    title: "",
+    description: "",
+    location: "",
+    startTime: "",
+    endTime: "",
+    type: "meeting",
+    customerId: "",
+  });
+
+  // Automatically select the first appointment on selected date if available
+  useEffect(() => {
+    if (appointments && appointments.length > 0) {
+      const dayAppts = appointments.filter((a) => {
+        if (!a.startTime) return false;
+        const d = new Date(a.startTime);
+        return d.getDate() === selectedDate.getDate() && d.getMonth() === selectedDate.getMonth() && d.getFullYear() === selectedDate.getFullYear();
+      });
+      if (dayAppts.length > 0) {
+        setSelectedAppt(dayAppts[0]);
+      } else {
+        setSelectedAppt(null);
+      }
+    }
+  }, [selectedDate, appointments]);
+
   const monthName = currentDate.toLocaleString("en", { month: "long", year: "numeric" });
 
-  const prevMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
-  const nextMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
+  const prevMonth = () => {
+    const prev = new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1);
+    setCurrentDate(prev);
+    setSelectedDate(prev);
+  };
+  
+  const nextMonth = () => {
+    const next = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1);
+    setCurrentDate(next);
+    setSelectedDate(next);
+  };
 
-  // Build calendar grid
-  const days: Date[] = [];
-  const dayIter = new Date(startOfWeek);
+  const handleCreateAppointment = () => {
+    if (!newAppt.title || !newAppt.startTime || !newAppt.endTime) return;
+    createAppointment.mutate({
+      organizationId: ORG_ID,
+      title: newAppt.title,
+      description: newAppt.description || undefined,
+      location: newAppt.location || undefined,
+      startTime: new Date(newAppt.startTime),
+      endTime: new Date(newAppt.endTime),
+      type: newAppt.type,
+      customerId: newAppt.customerId ? parseInt(newAppt.customerId) : undefined,
+    });
+  };
+
+  const handleCancelAppointment = () => {
+    if (!selectedAppt) return;
+    if (confirm("Are you sure you want to cancel this appointment?")) {
+      deleteMutation.mutate({ id: selectedAppt.id });
+    }
+  };
+
+  // Build calendar grids (42 days)
+  const mainDays: Date[] = [];
+  const mainDayIter = new Date(startOfWeek);
   for (let i = 0; i < 42; i++) {
-    days.push(new Date(dayIter));
-    dayIter.setDate(dayIter.getDate() + 1);
+    mainDays.push(new Date(mainDayIter));
+    mainDayIter.setDate(mainDayIter.getDate() + 1);
   }
 
-  const getApptsForDay = (date: Date) => {
+  const miniDays: Date[] = [];
+  const miniStartOfWeek = new Date(startOfMonth);
+  miniStartOfWeek.setDate(miniStartOfWeek.getDate() - miniStartOfWeek.getDay());
+  const miniDayIter = new Date(miniStartOfWeek);
+  for (let i = 0; i < 42; i++) {
+    miniDays.push(new Date(miniDayIter));
+    miniDayIter.setDate(miniDayIter.getDate() + 1);
+  }
+
+  // Map filters dynamically
+  const getApptAgent = (appt: any) => {
+    if (appt.assignedTo === 1) return "alex";
+    if (appt.assignedTo === 2) return "sarah";
+    if (appt.type === "call") return "ai";
+    return "alex";
+  };
+
+  const getFilteredApptsForDay = (date: Date) => {
     return appointments?.filter((a) => {
       if (!a.startTime) return false;
       const d = new Date(a.startTime);
-      return d.getDate() === date.getDate() && d.getMonth() === date.getMonth() && d.getFullYear() === date.getFullYear();
+      const isSameDay = d.getDate() === date.getDate() && d.getMonth() === date.getMonth() && d.getFullYear() === date.getFullYear();
+      if (!isSameDay) return false;
+
+      // Filter by team
+      const agent = getApptAgent(a);
+      if (!selectedTeam.includes(agent)) return false;
+
+      // Filter by type
+      if (selectedTypes.length > 0) {
+        let mappedType = "other";
+        if (a.type === "consultation" || a.type === "call") mappedType = "sales";
+        if (a.type === "demo") mappedType = "demo";
+        if (a.type === "meeting") mappedType = "onboarding";
+        if (a.type === "follow_up" || a.type === "other") mappedType = "support";
+        if (!selectedTypes.includes(mappedType)) return false;
+      }
+
+      return true;
     }) || [];
   };
 
@@ -69,154 +202,525 @@ export default function Calendar() {
     return date.getDate() === t.getDate() && date.getMonth() === t.getMonth() && date.getFullYear() === t.getFullYear();
   };
 
+  const isSelectedDate = (date: Date) => {
+    return date.getDate() === selectedDate.getDate() && date.getMonth() === selectedDate.getMonth() && date.getFullYear() === selectedDate.getFullYear();
+  };
+
   const isCurrentMonth = (date: Date) => date.getMonth() === currentDate.getMonth();
 
+  const getUpcomingAppointmentDetails = (appt: any) => {
+    if (!appt) return null;
+    const start = new Date(appt.startTime);
+    const timeString = start.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const dateString = start.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
+    
+    // Mock values corresponding to details pane
+    const score = appt.lead ? ((appt.lead.id * 17) % 40 + 55) : 94;
+    const intent = appt.description || "Interested in enterprise automation for 50+ staff.";
+    const status = appt.lead?.status || "Qualified";
+    const phone = appt.customer?.phone || "+1 (555) 012-3456";
+    const source = appt.customer?.source || "Website SMS Widget";
+
+    return {
+      time: `${timeString} (EST)`,
+      date: dateString,
+      title: appt.title,
+      location: appt.location || "Google Meet Link",
+      score,
+      intent,
+      status,
+      phone,
+      source,
+    };
+  };
+
+  const apptDetails = getUpcomingAppointmentDetails(selectedAppt);
+
+  const toggleTeamFilter = (team: string) => {
+    if (selectedTeam.includes(team)) {
+      setSelectedTeam(selectedTeam.filter(t => t !== team));
+    } else {
+      setSelectedTeam([...selectedTeam, team]);
+    }
+  };
+
+  const toggleTypeFilter = (type: string) => {
+    if (selectedTypes.includes(type)) {
+      setSelectedTypes(selectedTypes.filter(t => t !== type));
+    } else {
+      setSelectedTypes([...selectedTypes, type]);
+    }
+  };
+
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+    <div className="h-[calc(100vh-64px)] w-full flex overflow-hidden bg-white select-none">
+      
+      {/* COLUMN 1: Mini Calendar & Filters Sidebar */}
+      <div className="w-72 border-r border-zinc-200/80 flex flex-col shrink-0 bg-white p-5 space-y-6 overflow-y-auto">
+        
+        {/* Title */}
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Calendar</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Manage appointments and follow-ups. ({stats?.upcoming ?? 0} upcoming today)
+          <h1 className="text-xl font-extrabold text-zinc-950">Calendar</h1>
+          <p className="text-zinc-400 text-[10px] font-bold mt-1 uppercase tracking-wider">
+            Manage your AI-booked appointments. {stats?.upcoming ? `(${stats.upcoming} upcoming)` : ""}
           </p>
         </div>
-        <Button>
-          <Plus className="w-4 h-4 mr-2" />
-          New Appointment
-        </Button>
+
+        {/* Mini Month widget card */}
+        <div className="border border-zinc-150 rounded-xl p-3 bg-zinc-50/20">
+          <div className="flex items-center justify-between pb-2 border-b border-zinc-100">
+            <span className="text-xs font-bold text-zinc-800">{monthName}</span>
+            <div className="flex gap-1.5">
+              <button onClick={prevMonth} className="p-0.5 hover:bg-zinc-100 rounded text-zinc-500">
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </button>
+              <button onClick={nextMonth} className="p-0.5 hover:bg-zinc-100 rounded text-zinc-500">
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+          {/* Day initials */}
+          <div className="grid grid-cols-7 gap-1 mt-2 text-center text-[9px] font-extrabold text-zinc-400">
+            {["S", "M", "T", "W", "T", "F", "S"].map((day, idx) => (
+              <span key={idx}>{day}</span>
+            ))}
+          </div>
+          {/* Days numbers */}
+          <div className="grid grid-cols-7 gap-1 mt-1 text-center">
+            {miniDays.map((day, idx) => {
+              const isSel = isSelectedDate(day);
+              const isTodayDay = isToday(day);
+              const isCurrMonth = isCurrentMonth(day);
+
+              return (
+                <button
+                  key={idx}
+                  onClick={() => {
+                    setSelectedDate(day);
+                    setCurrentDate(day);
+                  }}
+                  className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold transition-all ${
+                    isSel 
+                      ? "bg-indigo-600 text-white shadow-sm" 
+                      : isTodayDay 
+                      ? "border border-indigo-600 text-indigo-600 font-extrabold" 
+                      : isCurrMonth 
+                      ? "text-zinc-800 hover:bg-zinc-100" 
+                      : "text-zinc-300 hover:bg-zinc-50"
+                  }`}
+                >
+                  {day.getDate()}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Team members checkbox filter list */}
+        <div className="space-y-2">
+          <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Team Members</span>
+          <div className="space-y-2 text-xs font-semibold text-zinc-700">
+            {[
+              { id: "alex", label: "Alex (Owner)", color: "bg-indigo-600" },
+              { id: "ai", label: "AI Assistant", color: "bg-cyan-400" },
+              { id: "sarah", label: "Sarah Miller", color: "bg-purple-400" },
+            ].map((member) => (
+              <label key={member.id} className="flex items-center gap-2.5 cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  checked={selectedTeam.includes(member.id)}
+                  onChange={() => toggleTeamFilter(member.id)}
+                  className="rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer"
+                />
+                <span className={`w-2 h-2 rounded-full ${member.color}`} />
+                <span>{member.label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        {/* Appointment type filter pills */}
+        <div className="space-y-2.5">
+          <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Appt. Type</span>
+          <div className="flex flex-wrap gap-1.5">
+            {[
+              { id: "sales", label: "Sales" },
+              { id: "demo", label: "Demo" },
+              { id: "onboarding", label: "Onboarding" },
+              { id: "support", label: "Support" },
+            ].map((type) => {
+              const isAct = selectedTypes.includes(type.id);
+              return (
+                <button
+                  key={type.id}
+                  onClick={() => toggleTypeFilter(type.id)}
+                  className={`text-[9px] font-extrabold px-2.5 py-1 rounded-full border transition-all ${
+                    isAct 
+                      ? "bg-indigo-50 border-indigo-200 text-indigo-650"
+                      : "bg-white border-zinc-200 text-zinc-500 hover:bg-zinc-50"
+                  }`}
+                >
+                  {type.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Add custom event trigger button */}
+        <div className="pt-2">
+          <Button 
+            onClick={() => setAddOpen(true)}
+            className="w-full bg-white border border-zinc-200 hover:bg-zinc-50 text-zinc-700 font-bold text-xs h-9 rounded-xl flex items-center justify-center gap-1.5 shadow-none transition-colors"
+          >
+            <Plus className="w-3.5 h-3.5 text-zinc-500" />
+            Add Custom Event
+          </Button>
+        </div>
+
       </div>
 
-      {/* Calendar */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Month View */}
-        <Card className="lg:col-span-2">
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Button variant="ghost" size="icon" onClick={prevMonth}>
-                  <ChevronLeft className="w-4 h-4" />
-                </Button>
-                <h2 className="text-lg font-semibold">{monthName}</h2>
-                <Button variant="ghost" size="icon" onClick={nextMonth}>
-                  <ChevronRight className="w-4 h-4" />
-                </Button>
-              </div>
-              <Button variant="outline" size="sm" onClick={() => setCurrentDate(new Date())}>
-                Today
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {/* Day headers */}
-            <div className="grid grid-cols-7 gap-1 mb-1">
-              {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
-                <div key={d} className="text-center text-xs font-medium text-muted-foreground py-2">
-                  {d}
+      {/* COLUMN 2: Main Monthly Grid */}
+      <div className="flex-1 flex flex-col min-w-0 bg-[#fcfcfd]">
+        
+        {/* Main Grid Header */}
+        <div className="px-6 py-4 border-b border-zinc-250 bg-white flex items-center justify-between shrink-0 select-none">
+          <h2 className="text-base font-extrabold text-zinc-950 tracking-tight">{monthName}</h2>
+          <div className="flex items-center gap-2">
+            <button onClick={prevMonth} className="p-1.5 hover:bg-zinc-100 rounded-lg text-zinc-500 border border-zinc-200 bg-white shadow-sm transition-colors">
+              <ChevronLeft className="w-3.5 h-3.5" />
+            </button>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                const today = new Date();
+                setCurrentDate(today);
+                setSelectedDate(today);
+              }}
+              className="text-zinc-700 border-zinc-200 h-8 px-3 rounded-lg text-xs font-semibold hover:bg-zinc-50 shadow-none"
+            >
+              Today
+            </Button>
+            <button onClick={nextMonth} className="p-1.5 hover:bg-zinc-100 rounded-lg text-zinc-500 border border-zinc-200 bg-white shadow-sm transition-colors">
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Grid Day headers row */}
+        <div className="grid grid-cols-7 border-b border-zinc-200/80 bg-zinc-50/20 text-center text-[10px] font-extrabold text-zinc-400 uppercase py-2 select-none">
+          {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day, idx) => (
+            <span key={idx}>{day}</span>
+          ))}
+        </div>
+
+        {/* Day Cells grid scroll body */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="grid grid-cols-7 grid-rows-6 h-full min-h-[500px]">
+            {isLoading ? (
+              Array.from({ length: 42 }).map((_, idx) => (
+                <div key={idx} className="border-r border-b border-zinc-100 p-2 space-y-1.5 bg-white min-h-[80px]">
+                  <Skeleton className="h-3 w-6 bg-zinc-100" />
+                  <Skeleton className="h-4 w-full bg-zinc-100 rounded" />
                 </div>
-              ))}
-            </div>
-            {/* Days */}
-            <div className="grid grid-cols-7 gap-1">
-              {days.map((day, i) => {
-                const dayAppts = getApptsForDay(day);
+              ))
+            ) : (
+              mainDays.map((day, idx) => {
+                const isSel = isSelectedDate(day);
+                const isTodayDay = isToday(day);
+                const isCurrMonth = isCurrentMonth(day);
+                const dayAppts = getFilteredApptsForDay(day);
+
                 return (
                   <div
-                    key={i}
-                    className={`min-h-[80px] p-1.5 rounded-lg border transition-colors ${
-                      isCurrentMonth(day) ? "bg-background" : "bg-muted/30"
-                    } ${isToday(day) ? "border-primary ring-1 ring-primary/20" : "border-transparent hover:border-muted"}`}
+                    key={idx}
+                    onClick={() => setSelectedDate(day)}
+                    className={`border-r border-b border-zinc-200/80 p-2 flex flex-col gap-1 min-h-[80px] cursor-pointer transition-all ${
+                      isSel 
+                        ? "bg-zinc-50/40 ring-1 ring-inset ring-indigo-500/20" 
+                        : isCurrMonth 
+                        ? "bg-white" 
+                        : "bg-zinc-50/30"
+                    }`}
                   >
-                    <div className={`text-xs font-medium mb-1 ${isToday(day) ? "text-primary" : isCurrentMonth(day) ? "" : "text-muted-foreground"}`}>
-                      {day.getDate()}
+                    {/* Day number cell badge */}
+                    <div className="flex justify-end select-none">
+                      <span className={`text-[10px] font-extrabold w-5 h-5 rounded-full flex items-center justify-center transition-all ${
+                        isTodayDay 
+                          ? "bg-indigo-600 text-white font-extrabold shadow-sm" 
+                          : isCurrMonth 
+                          ? "text-zinc-800" 
+                          : "text-zinc-300"
+                      }`}>
+                        {day.getDate()}
+                      </span>
                     </div>
-                    <div className="space-y-0.5">
-                      {dayAppts.slice(0, 2).map((appt) => (
-                        <div
-                          key={appt.id}
-                          className={`text-[10px] px-1.5 py-0.5 rounded truncate cursor-pointer ${typeColors[appt.type || "other"] || typeColors.other}`}
-                        >
-                          {appt.startTime ? new Date(appt.startTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""} {appt.title}
-                        </div>
-                      ))}
-                      {dayAppts.length > 2 && (
-                        <div className="text-[10px] text-muted-foreground px-1.5">+{dayAppts.length - 2} more</div>
-                      )}
+
+                    {/* Appointment blocks */}
+                    <div className="space-y-1 overflow-y-auto max-h-[70px]">
+                      {dayAppts.map((appt) => {
+                        const start = new Date(appt.startTime);
+                        const timeStr = start.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+                        const agent = getApptAgent(appt);
+
+                        // Block color based on assigned team member
+                        const blockStyle = 
+                          agent === "ai" 
+                            ? "bg-cyan-50 border-cyan-100 text-cyan-700" 
+                            : agent === "sarah" 
+                            ? "bg-purple-50 border-purple-100 text-purple-700" 
+                            : "bg-indigo-50 border-indigo-100 text-indigo-700";
+
+                        const isSelectedAppt = selectedAppt && selectedAppt.id === appt.id;
+
+                        return (
+                          <div
+                            key={appt.id}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedAppt(appt);
+                              setSelectedDate(day);
+                            }}
+                            className={`text-[9px] font-bold p-1 rounded border leading-none truncate transition-all ${blockStyle} ${
+                              isSelectedAppt ? "ring-1 ring-zinc-400 scale-[0.98]" : "hover:opacity-80"
+                            }`}
+                          >
+                            {timeStr} {appt.title}
+                          </div>
+                        );
+                      })}
                     </div>
+
                   </div>
                 );
-              })}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Sidebar - Upcoming */}
-        <div className="space-y-4">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <CalendarDays className="w-4 h-4" />
-                Upcoming Appointments
-              </CardTitle>
-            </CardHeader>
-            <ScrollArea className="h-[400px]">
-              <CardContent className="space-y-3">
-                {isLoading ? (
-                  Array.from({ length: 4 }).map((_, i) => (
-                    <Skeleton key={i} className="h-16 w-full" />
-                  ))
-                ) : appointments?.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-8">No appointments</p>
-                ) : (
-                  appointments?.sort((a, b) => new Date(a.startTime || 0).getTime() - new Date(b.startTime || 0).getTime()).map((appt) => (
-                    <div key={appt.id} className="flex items-start gap-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors">
-                      <div className="flex flex-col items-center px-2 py-1 rounded bg-primary/10 shrink-0">
-                        <span className="text-[10px] font-medium text-primary uppercase">
-                          {appt.startTime ? new Date(appt.startTime).toLocaleString("en", { month: "short" }) : ""}
-                        </span>
-                        <span className="text-lg font-bold text-primary">
-                          {appt.startTime ? new Date(appt.startTime).getDate() : ""}
-                        </span>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{appt.title}</p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <Clock className="w-3 h-3 text-muted-foreground" />
-                          <span className="text-xs text-muted-foreground">
-                            {appt.startTime ? new Date(appt.startTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}
-                            -
-                            {appt.endTime ? new Date(appt.endTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}
-                          </span>
-                        </div>
-                        {appt.location && (
-                          <div className="flex items-center gap-1 mt-0.5">
-                            <MapPin className="w-3 h-3 text-muted-foreground" />
-                            <span className="text-xs text-muted-foreground">{appt.location}</span>
-                          </div>
-                        )}
-                        {appt.customer && (
-                          <div className="flex items-center gap-1 mt-0.5">
-                            <User className="w-3 h-3 text-muted-foreground" />
-                            <span className="text-xs text-muted-foreground">{appt.customer.firstName} {appt.customer.lastName}</span>
-                          </div>
-                        )}
-                        <div className="mt-1.5">
-                          <Badge variant="outline" className={`text-[10px] ${typeColors[appt.type || "other"]}`}>
-                            {appt.type}
-                          </Badge>
-                          <Badge variant={appt.status === "confirmed" ? "default" : "outline"} className="text-[10px] ml-1">
-                            {appt.status}
-                          </Badge>
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </CardContent>
-            </ScrollArea>
-          </Card>
+              })
+            )}
+          </div>
         </div>
+
       </div>
+
+      {/* COLUMN 3: Appointment Details Sidebar */}
+      <div className="w-80 border-l border-zinc-200/80 bg-white flex flex-col shrink-0 overflow-y-auto">
+        {selectedAppt && apptDetails ? (
+          <div className="p-5 space-y-6">
+            
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-zinc-100 select-none">
+              <span className="text-sm font-extrabold text-zinc-950">Appointment Details</span>
+              <button 
+                onClick={() => setSelectedAppt(null)} 
+                className="text-zinc-400 hover:text-zinc-900 transition-colors p-1"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Profile Identity info */}
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-full bg-zinc-100 border border-zinc-200 flex items-center justify-center font-extrabold text-zinc-650 text-sm shrink-0 select-none">
+                {selectedAppt.customer 
+                  ? `${selectedAppt.customer.firstName[0] || ""}${selectedAppt.customer.lastName[0] || ""}`
+                  : "U"}
+              </div>
+              <div className="min-w-0">
+                <span className="text-base font-extrabold text-zinc-950 block truncate leading-tight">
+                  {selectedAppt.customer 
+                    ? `${selectedAppt.customer.firstName} ${selectedAppt.customer.lastName}`
+                    : selectedAppt.title}
+                </span>
+                <div className="flex items-center gap-1.5 mt-1 select-none">
+                  <Badge className="bg-zinc-100 text-zinc-400 text-[8px] font-extrabold px-1.5 py-0.5 rounded shadow-none select-none">
+                    Lead Score: {apptDetails.score}
+                  </Badge>
+                  <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-100 text-[8px] font-extrabold px-1.5 py-0.5 rounded shadow-none capitalize">
+                    {apptDetails.status}
+                  </Badge>
+                </div>
+              </div>
+            </div>
+
+            {/* Date & Time display blocks */}
+            <div className="grid grid-cols-2 gap-3.5 select-none">
+              <div className="border border-zinc-100 bg-zinc-50/20 rounded-xl p-3">
+                <div className="flex items-center gap-1 text-[9px] font-bold text-zinc-400 uppercase tracking-wider">
+                  <Calendar className="w-3 h-3" />
+                  <span>Date</span>
+                </div>
+                <p className="text-xs font-extrabold text-zinc-900 mt-1">{apptDetails.date}</p>
+              </div>
+              <div className="border border-zinc-100 bg-zinc-50/20 rounded-xl p-3">
+                <div className="flex items-center gap-1 text-[9px] font-bold text-zinc-400 uppercase tracking-wider">
+                  <Clock className="w-3 h-3" />
+                  <span>Time</span>
+                </div>
+                <p className="text-xs font-extrabold text-zinc-900 mt-1">{apptDetails.time}</p>
+              </div>
+            </div>
+
+            {/* AI Meeting Intent message quote */}
+            <div className="space-y-2">
+              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block select-none">AI Meeting Intent</span>
+              <div className="bg-zinc-50 border border-zinc-150 rounded-xl p-3 text-xs text-zinc-650 italic leading-relaxed font-semibold">
+                "{apptDetails.intent}"
+              </div>
+            </div>
+
+            {/* View conversation thread CTA */}
+            <div className="pt-2 select-none">
+              <Button
+                onClick={() => {
+                  if (selectedAppt.leadId || selectedAppt.customerId) {
+                    navigate(`/conversations/${selectedAppt.leadId || selectedAppt.customerId}`);
+                  } else {
+                    navigate("/conversations");
+                  }
+                }}
+                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-10 rounded-xl flex items-center justify-center gap-1.5 shadow-[0_2px_8px_rgba(79,70,229,0.25)] transition-all"
+              >
+                <span>💬</span>
+                View Full Conversation
+              </Button>
+            </div>
+
+            {/* Reschedule/Cancel operations */}
+            <div className="grid grid-cols-2 gap-2 select-none pt-2 border-t border-zinc-100">
+              <Button 
+                variant="outline"
+                onClick={() => alert("Rescheduling prompt is under development.")}
+                className="h-9 text-xs font-bold text-zinc-700 border-zinc-200 hover:bg-zinc-50 bg-white rounded-lg shadow-none flex items-center justify-center gap-1"
+              >
+                <RefreshCw className="w-3.5 h-3.5 text-zinc-500" />
+                Reschedule
+              </Button>
+              <Button 
+                variant="outline"
+                onClick={handleCancelAppointment}
+                disabled={deleteMutation.isPending}
+                className="h-9 text-xs font-bold text-red-600 border-zinc-200 hover:bg-red-50/50 hover:border-red-150 bg-white rounded-lg shadow-none flex items-center justify-center gap-1"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                Cancel
+              </Button>
+            </div>
+
+            {/* Contact details metadata */}
+            <div className="space-y-3 pt-4 border-t border-zinc-100 select-none">
+              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Contact Details</span>
+              <div className="space-y-2.5 pl-0.5 text-xs text-zinc-700 font-semibold">
+                <div className="flex items-center gap-2">
+                  <Phone className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                  <span>{apptDetails.phone}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Tag className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                  <span>Source: {apptDetails.source}</span>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        ) : (
+          <div className="p-6 h-full flex flex-col items-center justify-center text-center space-y-4 select-none">
+            <div className="w-12 h-12 rounded-full border border-zinc-150 bg-zinc-50 flex items-center justify-center text-zinc-400 shadow-sm">
+              <Calendar className="w-5 h-5" />
+            </div>
+            <div>
+              <span className="text-xs font-extrabold text-zinc-950 block">Select an Appointment</span>
+              <p className="text-[10px] text-zinc-400 font-semibold leading-relaxed max-w-[200px] mt-1 mx-auto">
+                Click on any appointment cell in the calendar grid to audit reschedule details and conversational intent.
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Scheduler Appointment Creation Dialog */}
+      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+        <DialogContent className="max-w-lg bg-white rounded-xl border border-zinc-200 shadow-lg text-xs font-medium text-zinc-700">
+          <DialogHeader>
+            <DialogTitle className="text-zinc-950 font-bold text-lg">New Appointment</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-4">
+            <div className="space-y-2">
+              <Label className="text-zinc-655">Title *</Label>
+              <Input 
+                value={newAppt.title} 
+                onChange={(e) => setNewAppt({ ...newAppt, title: e.target.value })} 
+                className="bg-zinc-50 border-zinc-200 text-xs rounded-lg focus-visible:ring-zinc-400 focus-visible:border-zinc-400 shadow-none" 
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-zinc-655">Start Time *</Label>
+                <Input 
+                  type="datetime-local" 
+                  value={newAppt.startTime} 
+                  onChange={(e) => setNewAppt({ ...newAppt, startTime: e.target.value })} 
+                  className="bg-zinc-50 border-zinc-200 text-xs rounded-lg shadow-none" 
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-zinc-655">End Time *</Label>
+                <Input 
+                  type="datetime-local" 
+                  value={newAppt.endTime} 
+                  onChange={(e) => setNewAppt({ ...newAppt, endTime: e.target.value })} 
+                  className="bg-zinc-50 border-zinc-200 text-xs rounded-lg shadow-none" 
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-zinc-655">Appointment Type</Label>
+                <Select value={newAppt.type} onValueChange={(v) => setNewAppt({ ...newAppt, type: v })}>
+                  <SelectTrigger className="bg-zinc-50 border-zinc-200 text-xs rounded-lg shadow-none"><SelectValue /></SelectTrigger>
+                  <SelectContent className="bg-white border-zinc-200">
+                    <SelectItem value="meeting">Meeting</SelectItem>
+                    <SelectItem value="call">Call</SelectItem>
+                    <SelectItem value="demo">Demo</SelectItem>
+                    <SelectItem value="follow_up">Follow Up</SelectItem>
+                    <SelectItem value="consultation">Consultation</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-zinc-655">Lead / Customer (ID)</Label>
+                <Input 
+                  placeholder="e.g. 3" 
+                  value={newAppt.customerId} 
+                  onChange={(e) => setNewAppt({ ...newAppt, customerId: e.target.value })} 
+                  className="bg-zinc-50 border-zinc-200 text-xs rounded-lg focus-visible:ring-zinc-400 focus-visible:border-zinc-400 shadow-none" 
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-zinc-655">Location</Label>
+              <Input 
+                value={newAppt.location} 
+                onChange={(e) => setNewAppt({ ...newAppt, location: e.target.value })} 
+                className="bg-zinc-50 border-zinc-200 text-xs rounded-lg focus-visible:ring-zinc-400 focus-visible:border-zinc-400 shadow-none" 
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-zinc-655">AI Meeting Intent / Description</Label>
+              <Input 
+                value={newAppt.description} 
+                onChange={(e) => setNewAppt({ ...newAppt, description: e.target.value })} 
+                className="bg-zinc-50 border-zinc-200 text-xs rounded-lg focus-visible:ring-zinc-400 focus-visible:border-zinc-400 shadow-none" 
+              />
+            </div>
+            <Button 
+              onClick={handleCreateAppointment} 
+              disabled={createAppointment.isPending || !newAppt.title || !newAppt.startTime || !newAppt.endTime}
+              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-10 rounded-lg shadow-sm"
+            >
+              {createAppointment.isPending ? "Scheduling..." : "Schedule Appointment"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
     </div>
   );
 }
