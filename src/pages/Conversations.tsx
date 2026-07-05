@@ -3,7 +3,7 @@ import { trpc } from "@/providers/trpc";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ScrollArea } from "@/components/ui/scroll-area";
+
 import { useNavigate } from "react-router";
 import {
   MessageSquare,
@@ -114,7 +114,7 @@ export default function Conversations() {
         </div>
 
         {/* Thread List Scroll area */}
-        <ScrollArea className="flex-1 border-t border-zinc-100">
+        <div className="flex-1 overflow-y-auto border-t border-zinc-100">
           <div className="flex flex-col gap-2 p-3">
             {isLoading ? (
               Array.from({ length: 4 }).map((_, i) => (
@@ -167,18 +167,21 @@ export default function Conversations() {
 
                       <div className="flex items-center gap-1.5">
                         {conv.aiHandled && conv.status === "open" ? (
-                          <Badge className="text-[9px] font-bold h-5 bg-indigo-50 border border-indigo-100 hover:bg-indigo-50 text-indigo-600 rounded-md shadow-none px-1 py-0.5">
+                          <Badge className="text-[9px] font-bold h-4.5 bg-indigo-50 border border-indigo-100 hover:bg-indigo-50 text-indigo-600 rounded-md shadow-none px-1 py-0.5">
                             AI Active
                           </Badge>
                         ) : conv.status === "pending" || conv.priority === "urgent" ? (
-                          <Badge className="text-[9px] font-bold h-5 bg-red-50 border border-red-200 hover:bg-red-50 text-red-500 rounded-md shadow-none px-1 py-0.5">
+                          <Badge className="text-[9px] font-bold h-4.5 bg-red-50 border border-red-150 hover:bg-red-50 text-red-500 rounded-md shadow-none px-1 py-0.5">
                             Manual
                           </Badge>
                         ) : (
-                          <Badge className="text-[9px] font-bold h-5 bg-zinc-100 border border-zinc-200 hover:bg-zinc-200 text-zinc-600 rounded-md shadow-none px-1 py-0.5">
+                          <Badge className="text-[9px] font-bold h-4.5 bg-zinc-100 border border-zinc-200 hover:bg-zinc-100 text-zinc-600 rounded-md shadow-none px-1 py-0.5">
                             Intervened
                           </Badge>
                         )}
+                        <Badge variant="outline" className="text-[8px] font-bold h-4.5 bg-zinc-50 border-zinc-200 hover:bg-zinc-50 text-zinc-500 rounded-md shadow-none px-1.5 py-0.5 uppercase">
+                          {conv.channel === "ai_chat" ? "web" : conv.channel}
+                        </Badge>
                       </div>
                       
                       <p className="text-[11px] text-zinc-500 truncate leading-relaxed">
@@ -190,7 +193,7 @@ export default function Conversations() {
               })
             )}
           </div>
-        </ScrollArea>
+        </div>
 
         {/* Inbox Footer status indicator */}
         <div className="p-3.5 border-t border-zinc-200 bg-zinc-50 flex items-center justify-between text-[10px] text-zinc-400 font-semibold shrink-0">
@@ -284,7 +287,7 @@ export default function Conversations() {
         </div>
 
         {/* Silhouette avatar content */}
-        <ScrollArea className="flex-1">
+        <div className="flex-1 overflow-y-auto">
           <div className="p-6 flex flex-col items-center text-center space-y-6">
             
             {/* Silhouette circle */}
@@ -337,7 +340,7 @@ export default function Conversations() {
             </div>
 
           </div>
-        </ScrollArea>
+        </div>
       </div>
 
     </div>

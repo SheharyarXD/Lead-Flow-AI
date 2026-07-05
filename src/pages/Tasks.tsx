@@ -34,9 +34,9 @@ import {
 const ORG_ID = 1;
 
 const priorityConfig: Record<string, { color: string; dot: string }> = {
-  urgent: { color: "text-red-650 bg-red-50 border-red-200", dot: "bg-red-500" },
-  high: { color: "text-orange-655 bg-orange-50 border-orange-200", dot: "bg-orange-500" },
-  medium: { color: "text-blue-650 bg-blue-50 border-blue-200", dot: "bg-blue-500" },
+  urgent: { color: "text-red-600 bg-red-50 border-red-200", dot: "bg-red-500" },
+  high: { color: "text-orange-600 bg-orange-50 border-orange-200", dot: "bg-orange-500" },
+  medium: { color: "text-blue-600 bg-blue-50 border-blue-200", dot: "bg-blue-500" },
   low: { color: "text-zinc-500 bg-zinc-50 border-zinc-200", dot: "bg-zinc-300" },
 };
 
@@ -61,7 +61,7 @@ export default function Tasks() {
     type: "follow_up",
     priority: "medium",
     dueDate: "",
-    customerId: "",
+    customerId: "none",
   });
 
   const { data: tasks, isLoading } = trpc.task.list.useQuery({
@@ -69,6 +69,11 @@ export default function Tasks() {
     status: statusFilter || undefined,
     priority: priorityFilter || undefined,
     limit: 50,
+  });
+
+  const { data: customers } = trpc.customer.list.useQuery({
+    organizationId: ORG_ID,
+    limit: 100,
   });
 
   const { data: stats } = trpc.task.stats.useQuery({ organizationId: ORG_ID });
@@ -92,7 +97,7 @@ export default function Tasks() {
         type: "follow_up",
         priority: "medium",
         dueDate: "",
-        customerId: "",
+        customerId: "none",
       });
     },
   });
@@ -110,7 +115,7 @@ export default function Tasks() {
       type: newTask.type,
       priority: newTask.priority,
       dueDate: newTask.dueDate ? new Date(newTask.dueDate) : undefined,
-      customerId: newTask.customerId ? parseInt(newTask.customerId) : undefined,
+      customerId: newTask.customerId && newTask.customerId !== "none" ? parseInt(newTask.customerId) : undefined,
     });
   };
 
@@ -133,7 +138,7 @@ export default function Tasks() {
 
         <Dialog open={addOpen} onOpenChange={setAddOpen}>
           <DialogTrigger asChild>
-            <Button className="bg-indigo-650 hover:bg-indigo-700 text-zinc-950 hover:text-white h-9 px-4 rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-[0_2px_8px_rgba(79,70,229,0.25)] transition-all">
+            <Button className="bg-indigo-600 hover:bg-indigo-700 text-white h-9 px-4 rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-[0_2px_8px_rgba(79,70,229,0.25)] transition-all">
               <Plus className="w-3.5 h-3.5" />
               New Task
             </Button>
@@ -144,7 +149,7 @@ export default function Tasks() {
             </DialogHeader>
             <div className="space-y-4 pt-4">
               <div className="space-y-2">
-                <Label className="text-zinc-655">Title *</Label>
+                <Label className="text-zinc-655 font-bold">Title *</Label>
                 <Input 
                   value={newTask.title} 
                   onChange={(e) => setNewTask({ ...newTask, title: e.target.value })} 
@@ -154,7 +159,7 @@ export default function Tasks() {
               </div>
 
               <div className="space-y-2">
-                <Label className="text-zinc-655">Description</Label>
+                <Label className="text-zinc-655 font-bold">Description</Label>
                 <textarea 
                   value={newTask.description} 
                   onChange={(e) => setNewTask({ ...newTask, description: e.target.value })} 
@@ -165,7 +170,7 @@ export default function Tasks() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label className="text-zinc-655">Type</Label>
+                  <Label className="text-zinc-655 font-bold">Type</Label>
                   <Select value={newTask.type} onValueChange={(v) => setNewTask({ ...newTask, type: v })}>
                     <SelectTrigger className="bg-zinc-50 border-zinc-200 text-xs rounded-lg shadow-none"><SelectValue /></SelectTrigger>
                     <SelectContent className="bg-white border-zinc-200">
@@ -180,7 +185,7 @@ export default function Tasks() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-zinc-655">Priority</Label>
+                  <Label className="text-zinc-655 font-bold">Priority</Label>
                   <Select value={newTask.priority} onValueChange={(v) => setNewTask({ ...newTask, priority: v })}>
                     <SelectTrigger className="bg-zinc-50 border-zinc-200 text-xs rounded-lg shadow-none"><SelectValue /></SelectTrigger>
                     <SelectContent className="bg-white border-zinc-200">
@@ -195,7 +200,7 @@ export default function Tasks() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label className="text-zinc-655">Due Date</Label>
+                  <Label className="text-zinc-655 font-bold">Due Date</Label>
                   <Input 
                     type="date" 
                     value={newTask.dueDate} 
@@ -204,20 +209,30 @@ export default function Tasks() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-zinc-655">Lead / Customer (ID)</Label>
-                  <Input 
-                    placeholder="e.g. 3" 
+                  <Label className="text-zinc-655 font-bold">Related Lead / Customer</Label>
+                  <Select 
                     value={newTask.customerId} 
-                    onChange={(e) => setNewTask({ ...newTask, customerId: e.target.value })} 
-                    className="bg-zinc-50 border-zinc-200 text-xs rounded-lg focus-visible:ring-zinc-400 focus-visible:border-zinc-400 shadow-none" 
-                  />
+                    onValueChange={(v) => setNewTask({ ...newTask, customerId: v })}
+                  >
+                    <SelectTrigger className="bg-zinc-50 border-zinc-200 text-xs rounded-lg shadow-none">
+                      <SelectValue placeholder="Select Customer (Optional)" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white border-zinc-250">
+                      <SelectItem value="none">None / Unlinked</SelectItem>
+                      {customers?.map((cust) => (
+                        <SelectItem key={cust.id} value={cust.id.toString()}>
+                          {cust.firstName} {cust.lastName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
 
               <Button 
                 onClick={handleCreateTask} 
                 disabled={createTask.isPending || !newTask.title}
-                className="w-full bg-indigo-650 hover:bg-indigo-700 text-zinc-950 hover:text-white font-bold text-xs h-10 rounded-lg shadow-sm mt-2"
+                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-10 rounded-lg shadow-sm mt-2"
               >
                 {createTask.isPending ? "Creating..." : "Create Task"}
               </Button>
@@ -298,7 +313,7 @@ export default function Tasks() {
               <span className="text-lg">📋</span>
               <span className="text-base font-extrabold text-zinc-950">Pending Tasks ({groupedTasks.pending.length})</span>
             </div>
-            <Badge variant="secondary" className="text-[10px] bg-indigo-50 border border-indigo-100/50 text-indigo-650 font-bold px-2 py-0.5 rounded-full select-none">
+            <Badge variant="secondary" className="text-[10px] bg-indigo-50 border border-indigo-100/50 text-indigo-600 font-bold px-2 py-0.5 rounded-full select-none">
               Active Queue
             </Badge>
           </CardHeader>
@@ -350,7 +365,7 @@ export default function Tasks() {
           </ScrollArea>
         </Card>
 
-        {/* Completed queue */}
+        {/* Completed Queue */}
         <Card className="bg-white border-zinc-200/80 shadow-sm rounded-xl p-6">
           <CardHeader className="p-0 pb-5 flex flex-row items-center justify-between space-y-0">
             <div className="flex items-center gap-2">

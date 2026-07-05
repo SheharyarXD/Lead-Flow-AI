@@ -2,6 +2,8 @@ import { getDb } from "./connection";
 import { conversations, messages } from "@db/schema";
 import { eq, and, desc, count, sql } from "drizzle-orm";
 import type { InferInsertModel } from "drizzle-orm";
+import { sendSMS } from "../lib/twilio";
+import { sendEmail } from "../lib/email";
 
 export async function findConversationsByOrganization(organizationId: number, filters?: {
   status?: string;
@@ -74,6 +76,28 @@ export async function createMessage(data: InferInsertModel<typeof messages>) {
         updatedAt: new Date(),
       })
       .where(eq(conversations.id, data.conversationId));
+
+    // Dispatch SMS or Email for outbound human/AI messages
+    if (!data.isInternalNote && (data.senderType === "agent" || data.senderType === "ai")) {
+      try {
+        const conv = await getDb().query.conversations.findFirst({
+          where: eq(conversations.id, data.conversationId),
+          with: {
+            customer: true,
+          },
+        });
+
+        if (conv) {
+          if (conv.channel === "sms" && conv.customer?.phone) {
+            await sendSMS(conv.customer.phone, data.content);
+          } else if (conv.channel === "email" && conv.customer?.email) {
+            await sendEmail(conv.customer.email, conv.subject || "Message from LeadFlow AI", data.content);
+          }
+        }
+      } catch (error) {
+        console.error("Failed to automatically dispatch outbound message:", error);
+      }
+    }
   }
 
   return message;

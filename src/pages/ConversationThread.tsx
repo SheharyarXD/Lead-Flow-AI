@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   MessageSquare,
   Search,
@@ -33,6 +32,7 @@ export default function ConversationThread() {
   const [message, setMessage] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<"All" | "AI Handled" | "Urgent">("All");
+  const [isInternalNote, setIsInternalNote] = useState(false);
 
   const { data: conversations, isLoading: listLoading } = trpc.conversation.list.useQuery({
     organizationId: ORG_ID,
@@ -69,7 +69,9 @@ export default function ConversationThread() {
       conversationId: convId,
       content: message,
       senderType: "agent",
+      isInternalNote,
     });
+    setIsInternalNote(false);
   };
 
   // Toggle AI Handled state
@@ -217,7 +219,7 @@ export default function ConversationThread() {
         </div>
 
         {/* Thread List Scroll Area */}
-        <ScrollArea className="flex-1 border-t border-zinc-100">
+        <div className="flex-1 overflow-y-auto border-t border-zinc-100">
           <div className="flex flex-col gap-2 p-3">
             {listLoading ? (
               Array.from({ length: 4 }).map((_, i) => (
@@ -268,18 +270,21 @@ export default function ConversationThread() {
 
                       <div className="flex items-center gap-1.5">
                         {conv.aiHandled && conv.status === "open" ? (
-                          <Badge className="text-[9px] font-bold h-5 bg-indigo-50 border border-indigo-100 hover:bg-indigo-50 text-indigo-600 rounded-md shadow-none px-1 py-0.5">
+                          <Badge className="text-[9px] font-bold h-4.5 bg-indigo-50 border border-indigo-100 hover:bg-indigo-50 text-indigo-600 rounded-md shadow-none px-1 py-0.5">
                             AI Active
                           </Badge>
                         ) : conv.status === "pending" || conv.priority === "urgent" ? (
-                          <Badge className="text-[9px] font-bold h-5 bg-red-50 border border-red-200 hover:bg-red-50 text-red-500 rounded-md shadow-none px-1 py-0.5">
+                          <Badge className="text-[9px] font-bold h-4.5 bg-red-50 border border-red-150 hover:bg-red-50 text-red-500 rounded-md shadow-none px-1 py-0.5">
                             Manual
                           </Badge>
                         ) : (
-                          <Badge className="text-[9px] font-bold h-5 bg-zinc-100 border border-zinc-200 hover:bg-zinc-200 text-zinc-600 rounded-md shadow-none px-1 py-0.5">
+                          <Badge className="text-[9px] font-bold h-4.5 bg-zinc-100 border border-zinc-200 hover:bg-zinc-150 text-zinc-600 rounded-md shadow-none px-1 py-0.5">
                             Intervened
                           </Badge>
                         )}
+                        <Badge variant="outline" className="text-[8px] font-bold h-4.5 bg-zinc-50 border-zinc-200 hover:bg-zinc-50 text-zinc-500 rounded-md shadow-none px-1.5 py-0.5 uppercase">
+                          {conv.channel === "ai_chat" ? "web" : conv.channel}
+                        </Badge>
                       </div>
                       
                       <p className="text-[11px] text-zinc-500 truncate leading-relaxed">
@@ -291,7 +296,7 @@ export default function ConversationThread() {
               })
             )}
           </div>
-        </ScrollArea>
+        </div>
 
         {/* Footer */}
         <div className="p-3.5 border-t border-zinc-200 bg-zinc-50 flex items-center justify-between text-[10px] text-zinc-400 font-semibold shrink-0">
@@ -360,7 +365,7 @@ export default function ConversationThread() {
         </div>
 
         {/* Message Log Bubble Scroll Container */}
-        <ScrollArea className="flex-1 px-6 bg-white" ref={scrollRef}>
+        <div className="flex-1 overflow-y-auto px-6 bg-white" ref={scrollRef}>
           <div className="py-6 space-y-5">
             
             {/* Start conversation header card */}
@@ -389,18 +394,25 @@ export default function ConversationThread() {
                 <div key={msg.id} className={`flex ${isCustomer ? "justify-start" : "justify-end"}`}>
                   <div className="space-y-1 max-w-[70%]">
                     <div className={`relative px-4 py-3 rounded-2xl text-xs leading-relaxed ${
-                      isCustomer
+                      msg.isInternalNote
+                        ? "bg-amber-50 border border-amber-200 text-amber-950 rounded-tr-sm shadow-sm"
+                        : isCustomer
                         ? "bg-white border border-zinc-200 text-zinc-900 rounded-tl-sm shadow-sm"
                         : "bg-indigo-600 text-white rounded-tr-sm shadow-md"
                     }`}>
-                      {/* Inside AI bubble title pill */}
-                      {isAI && (
+                      {/* Inside AI/Agent/Internal Note bubble title pill */}
+                      {msg.isInternalNote && (
+                        <div className="mb-1.5 flex items-center gap-1 text-[8px] font-extrabold tracking-wider text-amber-700 uppercase bg-amber-100/80 w-fit px-1.5 py-0.5 rounded">
+                          📌 Internal Note
+                        </div>
+                      )}
+                      {!msg.isInternalNote && isAI && (
                         <div className="mb-1.5 flex items-center gap-1 text-[8px] font-extrabold tracking-wider text-indigo-200 uppercase bg-indigo-700/50 w-fit px-1.5 py-0.5 rounded">
                           <Bot className="w-2.5 h-2.5" />
                           LeadFlow AI Agent
                         </div>
                       )}
-                      {!isCustomer && !isAI && (
+                      {!msg.isInternalNote && !isCustomer && !isAI && (
                         <div className="mb-1.5 flex items-center gap-1 text-[8px] font-extrabold tracking-wider text-indigo-100 uppercase bg-indigo-800/40 w-fit px-1.5 py-0.5 rounded">
                           <User className="w-2.5 h-2.5" />
                           LeadFlow Agent
@@ -424,28 +436,64 @@ export default function ConversationThread() {
               </div>
             )}
           </div>
-        </ScrollArea>
+        </div>
 
         {/* Message Input Box */}
         <div className="px-6 py-4 border-t border-zinc-200 bg-white shrink-0">
+          {/* Chat / Note Tab Selector */}
+          <div className="flex items-center gap-4 mb-2.5 px-1">
+            <button
+              type="button"
+              onClick={() => setIsInternalNote(false)}
+              className={`text-[10px] font-bold pb-1.5 border-b-2 transition-all ${
+                !isInternalNote
+                  ? "border-indigo-600 text-indigo-600"
+                  : "border-transparent text-zinc-400 hover:text-zinc-600"
+              }`}
+            >
+              Reply to Customer
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsInternalNote(true)}
+              className={`text-[10px] font-bold pb-1.5 border-b-2 transition-all ${
+                isInternalNote
+                  ? "border-amber-500 text-amber-700"
+                  : "border-transparent text-zinc-400 hover:text-zinc-650"
+              }`}
+            >
+              Internal Note
+            </button>
+          </div>
+
           <div className="flex gap-2">
             <Input
-              placeholder="Type a message..."
+              placeholder={isInternalNote ? "Type an internal note only visible to team members..." : "Type a message..."}
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSend()}
-              className="flex-1 bg-zinc-50 border-zinc-200 text-xs focus-visible:ring-1 focus-visible:ring-zinc-400 focus-visible:border-zinc-400"
+              className={`flex-1 bg-zinc-50 border-zinc-200 text-xs focus-visible:ring-1 ${
+                isInternalNote
+                  ? "focus-visible:ring-amber-400 focus-visible:border-amber-400"
+                  : "focus-visible:ring-zinc-400 focus-visible:border-zinc-400"
+              }`}
             />
-            <Button 
-              onClick={handleSend} 
+            <Button
+              onClick={handleSend}
               disabled={sendMessage.isPending || !message.trim()}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-4"
+              className={`rounded-lg px-4 transition-colors ${
+                isInternalNote
+                  ? "bg-amber-500 hover:bg-amber-600 text-white"
+                  : "bg-indigo-600 hover:bg-indigo-700 text-white"
+              }`}
             >
               <Send className="w-3.5 h-3.5" />
             </Button>
           </div>
           <p className="text-[9px] text-zinc-400 font-semibold mt-2">
-            Press Enter to send. AI replies are drafted automatically.
+            {isInternalNote
+              ? "Internal notes are saved privately and will not be sent to the customer."
+              : "Press Enter to send. AI replies are drafted automatically."}
           </p>
         </div>
       </div>
@@ -462,7 +510,7 @@ export default function ConversationThread() {
         </div>
 
         {/* Scrollable details contents */}
-        <ScrollArea className="flex-1">
+        <div className="flex-1 overflow-y-auto">
           <div className="p-6 flex flex-col items-center text-center space-y-6">
             
             {/* Active user details avatar */}
@@ -597,7 +645,7 @@ export default function ConversationThread() {
             </div>
 
           </div>
-        </ScrollArea>
+        </div>
       </div>
 
     </div>
