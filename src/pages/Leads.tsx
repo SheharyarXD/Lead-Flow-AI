@@ -137,6 +137,7 @@ export default function Leads() {
     if (lead.lastActivityAt || lead.createdAt) {
       const date = new Date(lead.lastActivityAt || lead.createdAt);
       const diffMs = Date.now() - date.getTime();
+      if (diffMs < 0) return "Just now";
       const minutes = Math.floor(diffMs / 60000);
       if (minutes < 60) return `${minutes} mins ago`;
       const hours = Math.floor(minutes / 60);
