@@ -10,6 +10,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Building2,
   Bot,
   Users,
@@ -26,6 +33,52 @@ export default function Settings() {
   const utils = trpc.useUtils();
   const { data: org } = trpc.organization.getById.useQuery({ id: organizationId! }, { enabled: !!organizationId });
   const { data: members } = trpc.organization.members.useQuery({ organizationId: organizationId! }, { enabled: !!organizationId });
+
+  // Real Knowledge Base State
+  const [kbQuestion, setKbQuestion] = useState("");
+  const [kbAnswer, setKbAnswer] = useState("");
+  const [kbCategory, setKbCategory] = useState("General");
+  const [kbError, setKbError] = useState<string | null>(null);
+
+  const { data: kbEntries, isLoading: kbLoading } = trpc.knowledgeBase.list.useQuery(
+    { organizationId: organizationId! },
+    { enabled: !!organizationId }
+  );
+
+  const createKBEntryMutation = trpc.knowledgeBase.create.useMutation({
+    onSuccess: () => {
+      utils.knowledgeBase.list.invalidate();
+      setKbQuestion("");
+      setKbAnswer("");
+      setKbCategory("General");
+      setKbError(null);
+    },
+    onError: (err) => {
+      setKbError(err.message || "Failed to add FAQ entry.");
+    },
+  });
+
+  const deleteKBEntryMutation = trpc.knowledgeBase.delete.useMutation({
+    onSuccess: () => {
+      utils.knowledgeBase.list.invalidate();
+    },
+  });
+
+  const handleAddKB = () => {
+    if (!kbQuestion.trim() || !kbAnswer.trim()) {
+      setKbError("Both Question and Answer are required.");
+      return;
+    }
+    setKbError(null);
+    createKBEntryMutation.mutate({
+      organizationId: organizationId!,
+      type: "faq",
+      title: kbQuestion.trim(),
+      content: kbAnswer.trim(),
+      category: kbCategory,
+      aiEnabled: true,
+    });
+  };
 
   const [businessForm, setBusinessForm] = useState({
     name: "",
@@ -289,27 +342,101 @@ export default function Settings() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Knowledge Base</CardTitle>
-              <CardDescription>Information the AI uses to answer questions.</CardDescription>
+              <CardTitle className="text-base">Knowledge Base FAQs</CardTitle>
+              <CardDescription>Add questions and answers so the AI Virtual Assistant can use them to reply to customers.</CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {[
-                  { type: "FAQ", title: "Office Hours", category: "General" },
-                  { type: "Service", title: "General Dentistry", category: "Services" },
-                  { type: "Service", title: "Cosmetic Dentistry", category: "Services" },
-                  { type: "Pricing", title: "New Patient Special", category: "Promotions" },
-                  { type: "FAQ", title: "Insurance Accepted", category: "Billing" },
-                ].map((kb, i) => (
-                  <div key={i} className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 transition-colors">
-                    <div className="flex items-center gap-3">
-                      <Badge variant="outline" className="text-[10px]">{kb.type}</Badge>
-                      <span className="text-sm font-medium">{kb.title}</span>
-                      <span className="text-xs text-muted-foreground">{kb.category}</span>
-                    </div>
-                    <Switch defaultChecked />
+            <CardContent className="space-y-6">
+              
+              {/* Add New FAQ Form */}
+              <div className="border border-zinc-150 p-4 rounded-xl space-y-3 bg-zinc-50/20">
+                <h4 className="text-xs font-bold text-zinc-950">Add New FAQ Response</h4>
+                {kbError && (
+                  <div className="bg-red-50 border border-red-150 text-red-800 text-[11px] font-bold p-2.5 rounded-lg">
+                    {kbError}
                   </div>
-                ))}
+                )}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1.5 text-left">
+                    <Label className="text-xs font-bold text-zinc-600">Question / Keyword</Label>
+                    <Input 
+                      placeholder="e.g. Do you have parking?" 
+                      value={kbQuestion} 
+                      onChange={(e) => setKbQuestion(e.target.value)} 
+                      className="bg-white border-zinc-200 text-xs shadow-none h-9"
+                    />
+                  </div>
+                  <div className="space-y-1.5 text-left">
+                    <Label className="text-xs font-bold text-zinc-600">Category</Label>
+                    <Select value={kbCategory} onValueChange={setKbCategory}>
+                      <SelectTrigger className="bg-white border-zinc-200 text-xs shadow-none h-9">
+                        <SelectValue placeholder="Category" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-white border-zinc-200">
+                        <SelectItem value="General">General</SelectItem>
+                        <SelectItem value="Pricing">Pricing / Booking</SelectItem>
+                        <SelectItem value="Services">Services</SelectItem>
+                        <SelectItem value="Location">Location / Operations</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="space-y-1.5 text-left">
+                  <Label className="text-xs font-bold text-zinc-600">Answer / AI Response Content</Label>
+                  <textarea
+                    placeholder="e.g. Yes, we have free validation parking in the rear lot."
+                    value={kbAnswer}
+                    onChange={(e) => setKbAnswer(e.target.value)}
+                    className="w-full min-h-[70px] p-2.5 rounded-lg border bg-white text-xs resize-y focus:outline-none focus:ring-1 focus:ring-zinc-400 border-zinc-200 shadow-none font-medium leading-relaxed"
+                  />
+                </div>
+                <div className="text-left">
+                  <Button 
+                    onClick={handleAddKB} 
+                    disabled={createKBEntryMutation.isPending}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white h-9 px-4 rounded-lg text-xs font-bold shadow-sm"
+                  >
+                    {createKBEntryMutation.isPending ? "Adding..." : "+ Add to AI Knowledge Base"}
+                  </Button>
+                </div>
+              </div>
+
+              {/* FAQ List Display */}
+              <div className="space-y-3">
+                <Label className="text-xs font-bold text-zinc-600 flex text-left">Saved Responses ({kbEntries?.length ?? 0})</Label>
+                <div className="divide-y divide-zinc-100 border border-zinc-150 rounded-xl overflow-hidden bg-white">
+                  {kbLoading ? (
+                    <div className="p-4 text-center text-xs text-zinc-400 font-medium">Loading answers...</div>
+                  ) : !kbEntries || kbEntries.length === 0 ? (
+                    <div className="p-6 text-center text-xs text-zinc-400 font-medium leading-relaxed bg-white">
+                      No FAQ responses found. Add a response above so the AI agent knows what to reply!
+                    </div>
+                  ) : (
+                    kbEntries.map((kb) => (
+                      <div key={kb.id} className="p-3.5 flex items-start justify-between gap-4 hover:bg-zinc-50/50 transition-colors">
+                        <div className="min-w-0 space-y-1 text-left">
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline" className="text-[9px] font-bold py-0.5 bg-zinc-50 border-zinc-200">
+                              {kb.category || "General"}
+                            </Badge>
+                            <span className="text-xs font-bold text-zinc-950 truncate">{kb.title}</span>
+                          </div>
+                          <p className="text-[11px] text-zinc-500 font-medium leading-relaxed pl-1">
+                            {kb.content}
+                          </p>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => deleteKBEntryMutation.mutate({ id: kb.id })}
+                          disabled={deleteKBEntryMutation.isPending}
+                          className="text-zinc-400 hover:text-red-500 p-1.5 h-8 w-8 rounded-lg shrink-0 font-extrabold text-lg"
+                        >
+                          ×
+                        </Button>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             </CardContent>
           </Card>
