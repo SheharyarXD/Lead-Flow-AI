@@ -9,6 +9,7 @@ import {
   deleteAutomation,
   getAutomationStats,
 } from "./queries/automations";
+import { requireOrganizationMembership, requireOrganizationRole } from "./queries/organizations";
 
 export const automationRouter = createRouter({
   list: authedQuery
@@ -21,15 +22,19 @@ export const automationRouter = createRouter({
         offset: z.number().optional(),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      await requireOrganizationMembership(ctx.user.id, input.organizationId);
       const { organizationId, ...filters } = input;
       return findAutomationsByOrganization(organizationId, filters);
     }),
 
   getById: authedQuery
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      return findAutomationById(input.id);
+    .query(async ({ input, ctx }) => {
+      const auto = await findAutomationById(input.id);
+      if (!auto) return null;
+      await requireOrganizationMembership(ctx.user.id, auto.organizationId);
+      return auto;
     }),
 
   create: authedQuery
@@ -45,6 +50,7 @@ export const automationRouter = createRouter({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      await requireOrganizationRole(ctx.user.id, input.organizationId, ["owner", "admin", "manager"]);
       return createAutomation({
         organizationId: input.organizationId,
         name: input.name,
@@ -69,21 +75,28 @@ export const automationRouter = createRouter({
         status: z.string().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const { id, ...data } = input;
+      const auto = await findAutomationById(id);
+      if (!auto) throw new Error("Automation not found");
+      await requireOrganizationRole(ctx.user.id, auto.organizationId, ["owner", "admin", "manager"]);
       return updateAutomation(id, data as Record<string, unknown>);
     }),
 
   delete: authedQuery
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const auto = await findAutomationById(input.id);
+      if (!auto) return { success: true };
+      await requireOrganizationRole(ctx.user.id, auto.organizationId, ["owner", "admin", "manager"]);
       await deleteAutomation(input.id);
       return { success: true };
     }),
 
   stats: authedQuery
     .input(z.object({ organizationId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      await requireOrganizationMembership(ctx.user.id, input.organizationId);
       return getAutomationStats(input.organizationId);
     }),
 });

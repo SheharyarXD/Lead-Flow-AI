@@ -1,10 +1,13 @@
 import { getDb } from "./connection";
-import { customers } from "@db/schema";
-import { eq, and, desc, like, or, count } from "drizzle-orm";
+import { customers, appointments } from "@db/schema";
+import { eq, and, desc, like, or, count, sql, gte } from "drizzle-orm";
 import type { InferInsertModel } from "drizzle-orm";
 
 export async function findCustomersByOrganization(organizationId: number, filters?: {
   status?: string;
+  tag?: string;
+  startDate?: Date;
+  endDate?: Date;
   search?: string;
   limit?: number;
   offset?: number;
@@ -12,6 +15,15 @@ export async function findCustomersByOrganization(organizationId: number, filter
   const conditions = [eq(customers.organizationId, organizationId)];
 
   if (filters?.status) conditions.push(eq(customers.status, filters.status as never));
+  if (filters?.tag) {
+    conditions.push(sql`JSON_CONTAINS(${customers.tags}, JSON_QUOTE(${filters.tag}))`);
+  }
+  if (filters?.startDate) {
+    conditions.push(gte(customers.createdAt, filters.startDate));
+  }
+  if (filters?.endDate) {
+    conditions.push(sql`${customers.createdAt} <= ${filters.endDate}`);
+  }
   if (filters?.search) {
     const search = `%${filters.search}%`;
     conditions.push(
@@ -48,6 +60,9 @@ export async function findCustomerById(id: number) {
       },
       tasks: {
         orderBy: [desc(customers.createdAt)],
+      },
+      appointments: {
+        orderBy: [desc(appointments.startTime)],
       },
     },
   });

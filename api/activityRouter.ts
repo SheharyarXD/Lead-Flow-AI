@@ -5,6 +5,7 @@ import {
   findActivitiesByOrganization,
   createActivity,
 } from "./queries/activities";
+import { requireOrganizationMembership, requireOrganizationRole } from "./queries/organizations";
 
 export const activityRouter = createRouter({
   list: authedQuery
@@ -17,7 +18,8 @@ export const activityRouter = createRouter({
         offset: z.number().optional(),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      await requireOrganizationMembership(ctx.user.id, input.organizationId);
       const { organizationId, ...filters } = input;
       return findActivitiesByOrganization(organizationId, filters);
     }),
@@ -35,6 +37,7 @@ export const activityRouter = createRouter({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      await requireOrganizationRole(ctx.user.id, input.organizationId, ["owner", "admin", "manager", "member"]);
       return createActivity({
         organizationId: input.organizationId,
         actorId: ctx.user.id,

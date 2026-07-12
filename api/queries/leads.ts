@@ -1,6 +1,6 @@
 import { getDb } from "./connection";
-import { leads } from "@db/schema";
-import { eq, and, desc, like, or, sql, count } from "drizzle-orm";
+import { leads, appointments } from "@db/schema";
+import { eq, and, desc, like, or, sql, count, gte } from "drizzle-orm";
 import type { InferInsertModel } from "drizzle-orm";
 
 export async function findLeadsByOrganization(organizationId: number, filters?: {
@@ -8,6 +8,9 @@ export async function findLeadsByOrganization(organizationId: number, filters?: 
   source?: string;
   priority?: string;
   assignedTo?: number;
+  tag?: string;
+  startDate?: Date;
+  endDate?: Date;
   search?: string;
   limit?: number;
   offset?: number;
@@ -18,6 +21,15 @@ export async function findLeadsByOrganization(organizationId: number, filters?: 
   if (filters?.source) conditions.push(eq(leads.source, filters.source as never));
   if (filters?.priority) conditions.push(eq(leads.priority, filters.priority as never));
   if (filters?.assignedTo) conditions.push(eq(leads.assignedTo, filters.assignedTo));
+  if (filters?.tag) {
+    conditions.push(sql`JSON_CONTAINS(${leads.tags}, JSON_QUOTE(${filters.tag}))`);
+  }
+  if (filters?.startDate) {
+    conditions.push(gte(leads.createdAt, filters.startDate));
+  }
+  if (filters?.endDate) {
+    conditions.push(sql`${leads.createdAt} <= ${filters.endDate}`);
+  }
   if (filters?.search) {
     const search = `%${filters.search}%`;
     conditions.push(
@@ -39,6 +51,9 @@ export async function findLeadsByOrganization(organizationId: number, filters?: 
     with: {
       customer: true,
       assignedUser: true,
+      appointments: {
+        orderBy: [desc(appointments.startTime)],
+      },
     },
     orderBy: [desc(leads.createdAt)],
     limit,
@@ -76,6 +91,9 @@ export async function findLeadById(id: number) {
       conversations: true,
       tasks: true,
       calls: true,
+      appointments: {
+        orderBy: [desc(appointments.startTime)],
+      },
     },
   });
 }

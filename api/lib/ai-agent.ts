@@ -1,5 +1,5 @@
 import { getDb } from "../queries/connection";
-import { knowledgeBase, organizations, conversations } from "@db/schema";
+import { knowledgeBase, organizations, conversations, activities, leads } from "@db/schema";
 import { eq } from "drizzle-orm";
 import { createMessage } from "../queries/conversations";
 
@@ -51,4 +51,21 @@ export async function triggerAIAutoReply(conversationId: number, userMessage: st
     senderType: "ai",
     content: responseText,
   });
+
+  // 6. Log AI Activity
+  await db.insert(activities).values({
+    organizationId: conv.organizationId,
+    actorType: "ai",
+    entityType: "conversation",
+    entityId: conv.id,
+    action: "AI Auto-Reply Sent",
+    description: `AI automatically responded to message: "${responseText.slice(0, 60)}..."`,
+  });
+
+  // 7. Update associated Lead lastActivityAt
+  if (conv.leadId) {
+    await db.update(leads)
+      .set({ lastActivityAt: new Date() })
+      .where(eq(leads.id, conv.leadId));
+  }
 }

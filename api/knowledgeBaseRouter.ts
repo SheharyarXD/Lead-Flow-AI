@@ -8,6 +8,7 @@ import {
   updateKBEntry,
   deleteKBEntry,
 } from "./queries/knowledgeBase";
+import { requireOrganizationMembership, requireOrganizationRole } from "./queries/organizations";
 
 export const knowledgeBaseRouter = createRouter({
   list: authedQuery
@@ -20,15 +21,19 @@ export const knowledgeBaseRouter = createRouter({
         offset: z.number().optional(),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      await requireOrganizationMembership(ctx.user.id, input.organizationId);
       const { organizationId, ...filters } = input;
       return findKBEntriesByOrganization(organizationId, filters);
     }),
 
   getById: authedQuery
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      return findKBEntryById(input.id);
+    .query(async ({ input, ctx }) => {
+      const entry = await findKBEntryById(input.id);
+      if (!entry) return null;
+      await requireOrganizationMembership(ctx.user.id, entry.organizationId);
+      return entry;
     }),
 
   create: authedQuery
@@ -44,6 +49,7 @@ export const knowledgeBaseRouter = createRouter({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      await requireOrganizationRole(ctx.user.id, input.organizationId, ["owner", "admin", "manager"]);
       return createKBEntry({
         organizationId: input.organizationId,
         type: input.type as typeof knowledgeBase.$inferSelect.type,
@@ -67,14 +73,20 @@ export const knowledgeBaseRouter = createRouter({
         aiEnabled: z.boolean().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const { id, ...data } = input;
+      const entry = await findKBEntryById(id);
+      if (!entry) throw new Error("Knowledge base entry not found");
+      await requireOrganizationRole(ctx.user.id, entry.organizationId, ["owner", "admin", "manager"]);
       return updateKBEntry(id, data as Record<string, unknown>);
     }),
 
   delete: authedQuery
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const entry = await findKBEntryById(input.id);
+      if (!entry) return { success: true };
+      await requireOrganizationRole(ctx.user.id, entry.organizationId, ["owner", "admin", "manager"]);
       await deleteKBEntry(input.id);
       return { success: true };
     }),

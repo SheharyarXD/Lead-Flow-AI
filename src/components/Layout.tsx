@@ -1,8 +1,9 @@
 import { useAuth } from "@/hooks/useAuth";
-import { Outlet, useLocation, useNavigate } from "react-router";
+import { Outlet, useLocation, useNavigate, Navigate } from "react-router";
 import { trpc } from "@/providers/trpc";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useState, useEffect, useRef } from "react";
+import { useOrganization } from "@/hooks/useOrganization";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -36,6 +37,7 @@ const navItems = [
 
 export default function Layout() {
   const { user, isLoading, logout } = useAuth();
+  const { organization, isLoading: orgLoading } = useOrganization() as any;
   const location = useLocation();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
@@ -79,7 +81,13 @@ export default function Layout() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isMobile]);
 
-  if (isLoading) {
+  useEffect(() => {
+    if (!isLoading && !orgLoading && user && organization && !organization.onboardingCompletedAt && location.pathname !== "/onboarding") {
+      navigate("/onboarding");
+    }
+  }, [user, organization, isLoading, orgLoading, location.pathname, navigate]);
+
+  if (isLoading || orgLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-[#fcfcfd]">
         <div className="flex flex-col items-center gap-4">
@@ -91,8 +99,17 @@ export default function Layout() {
   }
 
   if (!user) {
-    navigate("/login");
-    return null;
+    return <Navigate to="/login" replace />;
+  }
+
+  if (location.pathname === "/onboarding") {
+    return (
+      <div className="min-h-screen w-full bg-zinc-50/50">
+        <main className="w-full h-full">
+          <Outlet />
+        </main>
+      </div>
+    );
   }
 
   return (

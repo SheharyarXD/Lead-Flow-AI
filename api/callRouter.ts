@@ -8,6 +8,7 @@ import {
   updateCall,
   getCallStats,
 } from "./queries/calls";
+import { requireOrganizationMembership, requireOrganizationRole } from "./queries/organizations";
 
 export const callRouter = createRouter({
   list: authedQuery
@@ -21,15 +22,19 @@ export const callRouter = createRouter({
         offset: z.number().optional(),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      await requireOrganizationMembership(ctx.user.id, input.organizationId);
       const { organizationId, ...filters } = input;
       return findCallsByOrganization(organizationId, filters);
     }),
 
   getById: authedQuery
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      return findCallById(input.id);
+    .query(async ({ input, ctx }) => {
+      const call = await findCallById(input.id);
+      if (!call) return null;
+      await requireOrganizationMembership(ctx.user.id, call.organizationId);
+      return call;
     }),
 
   create: authedQuery
@@ -45,7 +50,8 @@ export const callRouter = createRouter({
         notes: z.string().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await requireOrganizationRole(ctx.user.id, input.organizationId, ["owner", "admin", "manager", "member"]);
       return createCall({
         organizationId: input.organizationId,
         customerId: input.customerId,
@@ -72,14 +78,18 @@ export const callRouter = createRouter({
         recordingUrl: z.string().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const { id, ...data } = input;
+      const call = await findCallById(id);
+      if (!call) throw new Error("Call not found");
+      await requireOrganizationRole(ctx.user.id, call.organizationId, ["owner", "admin", "manager", "member"]);
       return updateCall(id, data as Record<string, unknown>);
     }),
 
   stats: authedQuery
     .input(z.object({ organizationId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      await requireOrganizationMembership(ctx.user.id, input.organizationId);
       return getCallStats(input.organizationId);
     }),
 });

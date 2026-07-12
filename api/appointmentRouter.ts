@@ -9,6 +9,7 @@ import {
   deleteAppointment,
   getAppointmentStats,
 } from "./queries/appointments";
+import { requireOrganizationMembership, requireOrganizationRole } from "./queries/organizations";
 
 export const appointmentRouter = createRouter({
   list: authedQuery
@@ -24,15 +25,19 @@ export const appointmentRouter = createRouter({
         offset: z.number().optional(),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      await requireOrganizationMembership(ctx.user.id, input.organizationId);
       const { organizationId, ...filters } = input;
       return findAppointmentsByOrganization(organizationId, filters);
     }),
 
   getById: authedQuery
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      return findAppointmentById(input.id);
+    .query(async ({ input, ctx }) => {
+      const appt = await findAppointmentById(input.id);
+      if (!appt) return null;
+      await requireOrganizationMembership(ctx.user.id, appt.organizationId);
+      return appt;
     }),
 
   create: authedQuery
@@ -51,7 +56,8 @@ export const appointmentRouter = createRouter({
         notes: z.string().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await requireOrganizationRole(ctx.user.id, input.organizationId, ["owner", "admin", "manager", "member"]);
       return createAppointment({
         organizationId: input.organizationId,
         customerId: input.customerId,
@@ -82,21 +88,28 @@ export const appointmentRouter = createRouter({
         notes: z.string().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const { id, ...data } = input;
+      const appt = await findAppointmentById(id);
+      if (!appt) throw new Error("Appointment not found");
+      await requireOrganizationRole(ctx.user.id, appt.organizationId, ["owner", "admin", "manager", "member"]);
       return updateAppointment(id, data as Record<string, unknown>);
     }),
 
   delete: authedQuery
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const appt = await findAppointmentById(input.id);
+      if (!appt) return { success: true };
+      await requireOrganizationRole(ctx.user.id, appt.organizationId, ["owner", "admin", "manager"]);
       await deleteAppointment(input.id);
       return { success: true };
     }),
 
   stats: authedQuery
     .input(z.object({ organizationId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      await requireOrganizationMembership(ctx.user.id, input.organizationId);
       return getAppointmentStats(input.organizationId);
     }),
 });

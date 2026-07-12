@@ -44,7 +44,10 @@ app.post("/api/webhooks/sms", async (c) => {
   }
 
   try {
-    const organization = await db.query.organizations.findFirst({ where: eq(organizations.phone, toNum) });
+    let organization = toNum ? await db.query.organizations.findFirst({ where: eq(organizations.phone, toNum) }) : null;
+    if (!organization && !env.isProduction) {
+      organization = await db.query.organizations.findFirst();
+    }
     if (!organization) return c.text("<Response></Response>", 404, { "Content-Type": "application/xml" });
     let customer = await db.query.customers.findFirst({
       where: eq(customers.phone, fromNum),
@@ -148,7 +151,10 @@ app.post("/api/webhooks/email", async (c) => {
     // requests upstream; production rejects an unconfigured webhook secret.
     const emailSecret = process.env.EMAIL_WEBHOOK_SECRET;
     if (env.isProduction && (!emailSecret || c.req.header("x-webhook-secret") !== emailSecret)) return c.json({ success: false }, 401);
-    const organization = await db.query.organizations.findFirst({ where: eq(organizations.email, toEmail) });
+    let organization = toEmail ? await db.query.organizations.findFirst({ where: eq(organizations.email, toEmail) }) : null;
+    if (!organization && !env.isProduction) {
+      organization = await db.query.organizations.findFirst();
+    }
     if (!organization) return c.json({ success: false, error: "Unknown recipient" }, 404);
     let customer = await db.query.customers.findFirst({
       where: eq(customers.email, fromEmail),

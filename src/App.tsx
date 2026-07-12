@@ -14,6 +14,7 @@ import Admin from "./pages/Admin";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
 import CustomerDetail from "./pages/CustomerDetail";
+import Onboarding from "./pages/Onboarding";
 
 export default function App() {
   return (
@@ -22,6 +23,7 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route element={<Layout />}>
           <Route path="/" element={<Dashboard />} />
+          <Route path="/onboarding" element={<Onboarding />} />
           <Route path="/leads" element={<Leads />} />
           <Route path="/leads/:id" element={<LeadDetail />} />
           <Route path="/customers/:id" element={<CustomerDetail />} />

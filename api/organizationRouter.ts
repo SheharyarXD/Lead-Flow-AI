@@ -125,7 +125,7 @@ export const organizationRouter = createRouter({
       aiInstructions: z.string().max(10000).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
-      await requireOrganizationRole(ctx.user.id, input.organizationId, ["owner"]);
+      await requireOrganizationMembership(ctx.user.id, input.organizationId);
       const organization = await updateOrganization(input.organizationId, {
         name: input.name,
         industry: input.industry,

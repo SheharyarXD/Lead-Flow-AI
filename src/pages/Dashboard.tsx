@@ -17,7 +17,6 @@ import {
   Mail,
   Zap,
   CheckCircle2,
-  AlertCircle,
   MoreVertical,
   ChevronRight,
 } from "lucide-react";
@@ -155,87 +154,84 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Metrics Cards Grid (4 columns) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-        {/* Card 1: Active Conversations */}
+      {/* Metrics Cards Grid (6 columns) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-5">
+        {/* Card 1: Total Leads */}
+        <Card className="bg-white border-zinc-200/80 shadow-sm rounded-xl p-5 hover:shadow-md transition-shadow cursor-pointer" onClick={() => navigate("/leads")}>
+          <CardContent className="p-0 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="p-2.5 rounded-xl bg-blue-50/60 border border-blue-100/50 text-blue-600">
+                <Users className="w-5 h-5" />
+              </div>
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-zinc-500">Total Leads</p>
+              {statsLoading ? (
+                <Skeleton className="h-9 w-16 mt-1" />
+              ) : (
+                <p className="text-3xl font-extrabold text-zinc-950 mt-1 tracking-tight">{stats?.totalLeads ?? 0}</p>
+              )}
+            </div>
+            <div className="flex items-center justify-between text-xs font-semibold text-zinc-400 group pt-1 border-t border-zinc-50">
+              <span>View Details</span>
+              <ChevronRight className="w-3.5 h-3.5 text-zinc-400 group-hover:translate-x-0.5 transition-transform" />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Card 2: Open Conversations */}
         <Card className="bg-white border-zinc-200/80 shadow-sm rounded-xl p-5 hover:shadow-md transition-shadow cursor-pointer" onClick={() => navigate("/conversations")}>
           <CardContent className="p-0 space-y-4">
             <div className="flex items-center justify-between">
               <div className="p-2.5 rounded-xl bg-indigo-50/60 border border-indigo-100/50 text-indigo-600">
                 <MessageSquare className="w-5 h-5" />
               </div>
-              <Badge className="text-emerald-700 bg-emerald-50 border border-emerald-100 hover:bg-emerald-50 text-[10px] px-2 py-0.5 rounded-full font-bold flex items-center gap-0.5">
-                <TrendingUp className="w-3 h-3" />
-                +12%
-              </Badge>
             </div>
             <div>
-              <p className="text-xs font-semibold text-zinc-500">Active Conversations</p>
+              <p className="text-xs font-semibold text-zinc-500">Open Conversations</p>
               {statsLoading ? (
                 <Skeleton className="h-9 w-16 mt-1" />
               ) : (
                 <p className="text-3xl font-extrabold text-zinc-950 mt-1 tracking-tight">{stats?.openConversations ?? 0}</p>
               )}
             </div>
-            {/* Sparkline curve */}
-            <div className="pt-2">
-              <svg viewBox="0 0 120 30" className="w-full h-8 text-indigo-500" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M0,22 Q30,12 60,25 T120,8" />
-                <path d="M0,22 Q30,12 60,25 T120,8 L120,30 L0,30 Z" fill="rgba(99, 102, 241, 0.04)" stroke="none" />
-              </svg>
-            </div>
-            <div className="flex items-center justify-between text-xs font-semibold text-zinc-400 group pt-1">
+            <div className="flex items-center justify-between text-xs font-semibold text-zinc-400 group pt-1 border-t border-zinc-50">
               <span>View Details</span>
               <ChevronRight className="w-3.5 h-3.5 text-zinc-400 group-hover:translate-x-0.5 transition-transform" />
             </div>
           </CardContent>
         </Card>
 
-        {/* Card 2: New Leads */}
-        <Card className="bg-white border-zinc-200/80 shadow-sm rounded-xl p-5 hover:shadow-md transition-shadow cursor-pointer" onClick={() => navigate("/leads")}>
+        {/* Card 3: Pending Tasks */}
+        <Card className="bg-white border-zinc-200/80 shadow-sm rounded-xl p-5 hover:shadow-md transition-shadow cursor-pointer" onClick={() => navigate("/tasks")}>
           <CardContent className="p-0 space-y-4">
             <div className="flex items-center justify-between">
-              <div className="p-2.5 rounded-xl bg-cyan-50/60 border border-cyan-100/50 text-cyan-600">
-                <Users className="w-5 h-5" />
+              <div className="p-2.5 rounded-xl bg-red-50/60 border border-red-100/50 text-red-500">
+                <CheckCircle2 className="w-5 h-5" />
               </div>
-              <Badge className="text-emerald-700 bg-emerald-50 border border-emerald-100 hover:bg-emerald-50 text-[10px] px-2 py-0.5 rounded-full font-bold flex items-center gap-0.5">
-                <TrendingUp className="w-3 h-3" />
-                +5.4%
-              </Badge>
             </div>
             <div>
-              <p className="text-xs font-semibold text-zinc-500">New Leads</p>
+              <p className="text-xs font-semibold text-zinc-500">Pending Tasks</p>
               {statsLoading ? (
                 <Skeleton className="h-9 w-16 mt-1" />
               ) : (
-                <p className="text-3xl font-extrabold text-zinc-950 mt-1 tracking-tight">{stats?.newLeads ?? 0}</p>
+                <p className="text-3xl font-extrabold text-zinc-950 mt-1 tracking-tight">{stats?.pendingTasks ?? 0}</p>
               )}
             </div>
-            {/* Sparkline curve */}
-            <div className="pt-2">
-              <svg viewBox="0 0 120 30" className="w-full h-8 text-indigo-500" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M0,26 Q30,22 60,18 T120,12" />
-                <path d="M0,26 Q30,22 60,18 T120,12 L120,30 L0,30 Z" fill="rgba(99, 102, 241, 0.04)" stroke="none" />
-              </svg>
-            </div>
-            <div className="flex items-center justify-between text-xs font-semibold text-zinc-400 group pt-1">
+            <div className="flex items-center justify-between text-xs font-semibold text-zinc-400 group pt-1 border-t border-zinc-50">
               <span>View Details</span>
               <ChevronRight className="w-3.5 h-3.5 text-zinc-400 group-hover:translate-x-0.5 transition-transform" />
             </div>
           </CardContent>
         </Card>
 
-        {/* Card 3: Appointments Today */}
+        {/* Card 4: Appointments Today */}
         <Card className="bg-white border-zinc-200/80 shadow-sm rounded-xl p-5 hover:shadow-md transition-shadow cursor-pointer" onClick={() => navigate("/calendar")}>
           <CardContent className="p-0 space-y-4">
             <div className="flex items-center justify-between">
-              <div className="p-2.5 rounded-xl bg-slate-50 border border-zinc-200 text-zinc-900">
+              <div className="p-2.5 rounded-xl bg-emerald-50/60 border border-emerald-100/50 text-emerald-600">
                 <Calendar className="w-5 h-5" />
               </div>
-              <Badge className="text-red-700 bg-red-50 border border-red-100 hover:bg-red-50 text-[10px] px-2 py-0.5 rounded-full font-bold flex items-center gap-0.5">
-                <span className="text-[8px] transform rotate-180 inline-block font-extrabold">▲</span>
-                -2%
-              </Badge>
             </div>
             <div>
               <p className="text-xs font-semibold text-zinc-500">Appointments Today</p>
@@ -245,47 +241,53 @@ export default function Dashboard() {
                 <p className="text-3xl font-extrabold text-zinc-950 mt-1 tracking-tight">{stats?.upcomingAppointments ?? 0}</p>
               )}
             </div>
-            {/* Sparkline curve */}
-            <div className="pt-2">
-              <svg viewBox="0 0 120 30" className="w-full h-8 text-indigo-500" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M0,12 Q30,20 60,14 T120,18" />
-                <path d="M0,12 Q30,20 60,14 T120,18 L120,30 L0,30 Z" fill="rgba(99, 102, 241, 0.04)" stroke="none" />
-              </svg>
-            </div>
-            <div className="flex items-center justify-between text-xs font-semibold text-zinc-400 group pt-1">
+            <div className="flex items-center justify-between text-xs font-semibold text-zinc-400 group pt-1 border-t border-zinc-50">
               <span>View Details</span>
               <ChevronRight className="w-3.5 h-3.5 text-zinc-400 group-hover:translate-x-0.5 transition-transform" />
             </div>
           </CardContent>
         </Card>
 
-        {/* Card 4: Unresolved Flags */}
-        <Card className="bg-white border-zinc-200/80 shadow-sm rounded-xl p-5 hover:shadow-md transition-shadow cursor-pointer" onClick={() => navigate("/tasks")}>
+        {/* Card 5: Total Calls */}
+        <Card className="bg-white border-zinc-200/80 shadow-sm rounded-xl p-5 hover:shadow-md transition-shadow cursor-pointer" onClick={() => navigate("/calls")}>
           <CardContent className="p-0 space-y-4">
             <div className="flex items-center justify-between">
-              <div className="p-2.5 rounded-xl bg-red-50/60 border border-red-100/50 text-red-500">
-                <AlertCircle className="w-5 h-5" />
+              <div className="p-2.5 rounded-xl bg-cyan-50/60 border border-cyan-100/50 text-cyan-600">
+                <Phone className="w-5 h-5" />
               </div>
-              <Badge className="text-zinc-600 bg-zinc-50 border border-zinc-100 hover:bg-zinc-50 text-[10px] px-2 py-0.5 rounded-full font-bold flex items-center gap-0.5">
-                Stable
-              </Badge>
             </div>
             <div>
-              <p className="text-xs font-semibold text-zinc-500">Unresolved Flags</p>
+              <p className="text-xs font-semibold text-zinc-500">Total Calls</p>
               {statsLoading ? (
                 <Skeleton className="h-9 w-16 mt-1" />
               ) : (
-                <p className="text-3xl font-extrabold text-zinc-950 mt-1 tracking-tight">{stats?.pendingTasks ?? 0}</p>
+                <p className="text-3xl font-extrabold text-zinc-950 mt-1 tracking-tight">{stats?.totalCalls ?? 0}</p>
               )}
             </div>
-            {/* Sparkline curve */}
-            <div className="pt-2">
-              <svg viewBox="0 0 120 30" className="w-full h-8 text-indigo-500" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M0,18 Q30,24 60,18 T120,20" />
-                <path d="M0,18 Q30,24 60,18 T120,20 L120,30 L0,30 Z" fill="rgba(99, 102, 241, 0.04)" stroke="none" />
-              </svg>
+            <div className="flex items-center justify-between text-xs font-semibold text-zinc-400 group pt-1 border-t border-zinc-50">
+              <span>View Details</span>
+              <ChevronRight className="w-3.5 h-3.5 text-zinc-400 group-hover:translate-x-0.5 transition-transform" />
             </div>
-            <div className="flex items-center justify-between text-xs font-semibold text-zinc-400 group pt-1">
+          </CardContent>
+        </Card>
+
+        {/* Card 6: Total Messages */}
+        <Card className="bg-white border-zinc-200/80 shadow-sm rounded-xl p-5 hover:shadow-md transition-shadow cursor-pointer" onClick={() => navigate("/conversations")}>
+          <CardContent className="p-0 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="p-2.5 rounded-xl bg-amber-50/60 border border-amber-100/50 text-amber-600">
+                <Mail className="w-5 h-5" />
+              </div>
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-zinc-500">Total Messages</p>
+              {statsLoading ? (
+                <Skeleton className="h-9 w-16 mt-1" />
+              ) : (
+                <p className="text-3xl font-extrabold text-zinc-950 mt-1 tracking-tight">{stats?.totalMessages ?? 0}</p>
+              )}
+            </div>
+            <div className="flex items-center justify-between text-xs font-semibold text-zinc-400 group pt-1 border-t border-zinc-50">
               <span>View Details</span>
               <ChevronRight className="w-3.5 h-3.5 text-zinc-400 group-hover:translate-x-0.5 transition-transform" />
             </div>

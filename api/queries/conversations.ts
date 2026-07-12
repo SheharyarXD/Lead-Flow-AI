@@ -61,46 +61,57 @@ export async function updateConversation(id: number, data: any) {
 
 export async function createMessage(data: InferInsertModel<typeof messages>) {
   const [result] = await getDb().insert(messages).values(data).$returningId();
-  const message = await getDb().query.messages.findFirst({
-    where: eq(messages.id, result.id),
-  });
 
   // Update conversation last message
-  if (message) {
-    await getDb()
-      .update(conversations)
-      .set({
-        lastMessageAt: message.createdAt,
-        lastMessagePreview: message.content.slice(0, 200),
-        messageCount: sql`${conversations.messageCount} + 1`,
-        updatedAt: new Date(),
-      })
-      .where(eq(conversations.id, data.conversationId));
+  await getDb()
+    .update(conversations)
+    .set({
+      lastMessageAt: new Date(),
+      lastMessagePreview: data.content.slice(0, 200),
+      messageCount: sql`${conversations.messageCount} + 1`,
+      updatedAt: new Date(),
+    })
+    .where(eq(conversations.id, data.conversationId));
 
-    // Dispatch SMS or Email for outbound human/AI messages
-    if (!data.isInternalNote && (data.senderType === "agent" || data.senderType === "ai")) {
-      try {
-        const conv = await getDb().query.conversations.findFirst({
-          where: eq(conversations.id, data.conversationId),
-          with: {
-            customer: true,
-          },
-        });
+  // Dispatch SMS or Email for outbound human/AI messages
+  let dispatchResult: any = null;
+  if (!data.isInternalNote && (data.senderType === "agent" || data.senderType === "ai")) {
+    try {
+      const conv = await getDb().query.conversations.findFirst({
+        where: eq(conversations.id, data.conversationId),
+        with: {
+          customer: true,
+        },
+      });
 
-        if (conv) {
-          if (conv.channel === "sms" && conv.customer?.phone) {
-            await sendSMS(conv.customer.phone, data.content);
-          } else if (conv.channel === "email" && conv.customer?.email) {
-            await sendEmail(conv.customer.email, conv.subject || "Message from LeadFlow AI", data.content);
-          }
+      if (conv) {
+        if (conv.channel === "sms" && conv.customer?.phone) {
+          dispatchResult = await sendSMS(conv.customer.phone, data.content);
+        } else if (conv.channel === "email" && conv.customer?.email) {
+          dispatchResult = await sendEmail(conv.customer.email, conv.subject || "Message from LeadFlow AI", data.content);
         }
-      } catch (error) {
-        console.error("Failed to automatically dispatch outbound message:", error);
       }
+    } catch (error) {
+      console.error("Failed to automatically dispatch outbound message:", error);
     }
   }
 
-  return message;
+  const finalMetadata = dispatchResult ? {
+    dispatchId: dispatchResult.sid || dispatchResult.messageId || null,
+    status: dispatchResult.status === "development_not_sent" ? "simulated" : "sent",
+    dispatchedAt: new Date().toISOString(),
+  } : undefined;
+
+  if (finalMetadata) {
+    await getDb()
+      .update(messages)
+      .set({ metadata: finalMetadata })
+      .where(eq(messages.id, result.id));
+  }
+
+  return getDb().query.messages.findFirst({
+    where: eq(messages.id, result.id),
+  });
 }
 
 export async function getConversationStats(organizationId: number) {
