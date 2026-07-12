@@ -9,6 +9,7 @@ import {
   deleteCustomer,
   countCustomersByOrganization,
 } from "./queries/customers";
+import { requireOrganizationMembership, requireOrganizationRole } from "./queries/organizations";
 
 export const customerRouter = createRouter({
   list: authedQuery
@@ -21,21 +22,26 @@ export const customerRouter = createRouter({
         offset: z.number().optional(),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      await requireOrganizationMembership(ctx.user.id, input.organizationId);
       const { organizationId, ...filters } = input;
       return findCustomersByOrganization(organizationId, filters);
     }),
 
   count: authedQuery
     .input(z.object({ organizationId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      await requireOrganizationMembership(ctx.user.id, input.organizationId);
       return countCustomersByOrganization(input.organizationId);
     }),
 
   getById: authedQuery
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      return findCustomerById(input.id);
+    .query(async ({ input, ctx }) => {
+      const customer = await findCustomerById(input.id);
+      if (!customer) return null;
+      await requireOrganizationMembership(ctx.user.id, customer.organizationId);
+      return customer;
     }),
 
   create: authedQuery
@@ -51,7 +57,8 @@ export const customerRouter = createRouter({
         notes: z.string().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await requireOrganizationRole(ctx.user.id, input.organizationId, ["owner", "admin", "manager", "member"]);
       return createCustomer({
         organizationId: input.organizationId,
         firstName: input.firstName,
@@ -77,14 +84,20 @@ export const customerRouter = createRouter({
         notes: z.string().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const { id, ...data } = input;
+      const customer = await findCustomerById(id);
+      if (!customer) return null;
+      await requireOrganizationRole(ctx.user.id, customer.organizationId, ["owner", "admin", "manager", "member"]);
       return updateCustomer(id, data as Record<string, unknown>);
     }),
 
   delete: authedQuery
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const customer = await findCustomerById(input.id);
+      if (!customer) return { success: true };
+      await requireOrganizationRole(ctx.user.id, customer.organizationId, ["owner", "admin", "manager"]);
       await deleteCustomer(input.id);
       return { success: true };
     }),

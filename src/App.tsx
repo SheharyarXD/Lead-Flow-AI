@@ -13,6 +13,7 @@ import Settings from "./pages/Settings";
 import Admin from "./pages/Admin";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
+import CustomerDetail from "./pages/CustomerDetail";
 
 export default function App() {
   return (
@@ -23,6 +24,7 @@ export default function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/leads" element={<Leads />} />
           <Route path="/leads/:id" element={<LeadDetail />} />
+          <Route path="/customers/:id" element={<CustomerDetail />} />
           <Route path="/conversations" element={<Conversations />} />
           <Route path="/conversations/:id" element={<ConversationThread />} />
           <Route path="/calls" element={<Calls />} />

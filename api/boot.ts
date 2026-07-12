@@ -21,16 +21,21 @@ app.use("/api/trpc/*", async (c) => {
 
 // ── Inbound Webhooks for SMS & Email ──
 import { getDb } from "./queries/connection";
-import { customers, conversations, messages, activities } from "@db/schema";
+import { customers, conversations, activities, organizations } from "@db/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { createMessage } from "./queries/conversations";
 import { triggerAIAutoReply } from "./lib/ai-agent";
+import twilio from "twilio";
 
 app.post("/api/webhooks/sms", async (c) => {
   const db = getDb();
   const body = await c.req.parseBody();
+  const signature = c.req.header("x-twilio-signature");
+  const webhookToken = process.env.TWILIO_AUTH_TOKEN;
+  if (env.isProduction && (!webhookToken || !signature || !twilio.validateRequest(webhookToken, signature, c.req.url, Object.fromEntries(Object.entries(body).map(([key, value]) => [key, String(value)]))))) return c.text("Unauthorized", 401);
   
   const fromNum = (body.From as string) || "";
+  const toNum = (body.To as string) || "";
   const textBody = (body.Body as string) || "";
   
   if (!fromNum || !textBody) {
@@ -39,13 +44,15 @@ app.post("/api/webhooks/sms", async (c) => {
   }
 
   try {
+    const organization = await db.query.organizations.findFirst({ where: eq(organizations.phone, toNum) });
+    if (!organization) return c.text("<Response></Response>", 404, { "Content-Type": "application/xml" });
     let customer = await db.query.customers.findFirst({
       where: eq(customers.phone, fromNum),
     });
 
     if (!customer) {
       const [custResult] = await db.insert(customers).values({
-        organizationId: 1,
+        organizationId: organization.id,
         firstName: "Inbound",
         lastName: fromNum,
         phone: fromNum,
@@ -69,7 +76,7 @@ app.post("/api/webhooks/sms", async (c) => {
 
       if (!conv) {
         const [convResult] = await db.insert(conversations).values({
-          organizationId: 1,
+          organizationId: organization.id,
           customerId: customer.id,
           channel: "sms",
           subject: `SMS Thread with ${customer.firstName} ${customer.lastName}`,
@@ -100,7 +107,7 @@ app.post("/api/webhooks/sms", async (c) => {
         });
 
         await db.insert(activities).values({
-          organizationId: 1,
+          organizationId: organization.id,
           actorType: "customer",
           entityType: "conversation",
           entityId: conv.id,
@@ -128,6 +135,7 @@ app.post("/api/webhooks/email", async (c) => {
   const body = await c.req.parseBody();
 
   const fromEmail = (body.From as string) || "";
+  const toEmail = (body.To as string) || "";
   const textBody = (body.Body as string) || "";
   const subject = (body.Subject as string) || "Email Update";
 
@@ -136,13 +144,19 @@ app.post("/api/webhooks/email", async (c) => {
   }
 
   try {
+    // The receiving address is the tenant routing key. Providers should sign
+    // requests upstream; production rejects an unconfigured webhook secret.
+    const emailSecret = process.env.EMAIL_WEBHOOK_SECRET;
+    if (env.isProduction && (!emailSecret || c.req.header("x-webhook-secret") !== emailSecret)) return c.json({ success: false }, 401);
+    const organization = await db.query.organizations.findFirst({ where: eq(organizations.email, toEmail) });
+    if (!organization) return c.json({ success: false, error: "Unknown recipient" }, 404);
     let customer = await db.query.customers.findFirst({
       where: eq(customers.email, fromEmail),
     });
 
     if (!customer) {
       const [custResult] = await db.insert(customers).values({
-        organizationId: 1,
+        organizationId: organization.id,
         firstName: "Inbound",
         lastName: fromEmail.split("@")[0],
         email: fromEmail,
@@ -166,7 +180,7 @@ app.post("/api/webhooks/email", async (c) => {
 
       if (!conv) {
         const [convResult] = await db.insert(conversations).values({
-          organizationId: 1,
+          organizationId: organization.id,
           customerId: customer.id,
           channel: "email",
           subject,
@@ -197,7 +211,7 @@ app.post("/api/webhooks/email", async (c) => {
         });
 
         await db.insert(activities).values({
-          organizationId: 1,
+          organizationId: organization.id,
           actorType: "customer",
           entityType: "conversation",
           entityId: conv.id,

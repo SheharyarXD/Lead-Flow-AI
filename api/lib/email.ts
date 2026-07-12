@@ -25,8 +25,8 @@ if (smtpHost && smtpUser && smtpPass) {
 
 export async function sendEmail(to: string, subject: string, body: string) {
   if (!transporter) {
-    console.log(`[SIMULATED EMAIL] TO: ${to} | SUBJECT: ${subject} | BODY: ${body}`);
-    return { messageId: "simulated_email_message_id" };
+    console.warn(`Email not sent: SMTP is not configured (development mode). Recipient: ${to}`);
+    return { messageId: null, status: "development_not_sent" as const };
   }
 
   try {

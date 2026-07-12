@@ -9,6 +9,7 @@ import {
   deleteTask,
   getTaskStats,
 } from "./queries/tasks";
+import { requireOrganizationMembership, requireOrganizationRole } from "./queries/organizations";
 
 export const taskRouter = createRouter({
   list: authedQuery
@@ -24,15 +25,14 @@ export const taskRouter = createRouter({
         offset: z.number().optional(),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => { await requireOrganizationMembership(ctx.user.id, input.organizationId);
       const { organizationId, ...filters } = input;
       return findTasksByOrganization(organizationId, filters);
     }),
 
   getById: authedQuery
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      return findTaskById(input.id);
+    .query(async ({ input, ctx }) => { const task = await findTaskById(input.id); if (!task) return null; await requireOrganizationMembership(ctx.user.id, task.organizationId); return task;
     }),
 
   create: authedQuery
@@ -50,7 +50,7 @@ export const taskRouter = createRouter({
         dueDate: z.date().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => { await requireOrganizationRole(ctx.user.id, input.organizationId, ["owner", "admin", "manager", "member"]);
       return createTask({
         organizationId: input.organizationId,
         customerId: input.customerId,
@@ -78,21 +78,22 @@ export const taskRouter = createRouter({
         completedAt: z.date().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const { id, ...data } = input;
+      const task = await findTaskById(id); if (!task) return null; await requireOrganizationRole(ctx.user.id, task.organizationId, ["owner", "admin", "manager", "member"]);
       return updateTask(id, data as Record<string, unknown>);
     }),
 
   delete: authedQuery
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => { const task = await findTaskById(input.id); if (!task) return { success: true }; await requireOrganizationRole(ctx.user.id, task.organizationId, ["owner", "admin", "manager"]);
       await deleteTask(input.id);
       return { success: true };
     }),
 
   stats: authedQuery
     .input(z.object({ organizationId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => { await requireOrganizationMembership(ctx.user.id, input.organizationId);
       return getTaskStats(input.organizationId);
     }),
 });

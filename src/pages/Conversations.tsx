@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { trpc } from "@/providers/trpc";
+import { useOrganization } from "@/hooks/useOrganization";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -16,17 +17,16 @@ import {
   ArrowRight,
 } from "lucide-react";
 
-const ORG_ID = 1;
-
 export default function Conversations() {
+  const { organizationId } = useOrganization();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<"All" | "AI Handled" | "Urgent">("All");
 
   const { data: conversations, isLoading } = trpc.conversation.list.useQuery({
-    organizationId: ORG_ID,
+    organizationId: organizationId!,
     limit: 50,
-  });
+  }, { enabled: !!organizationId });
 
   // Dynamic Relative Time Formatter
   const formatRelativeTime = (dateInput?: Date | string | null): string => {

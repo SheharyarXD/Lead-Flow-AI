@@ -10,6 +10,9 @@ import {
   getLeadStats,
   countLeadsByOrganization,
 } from "./queries/leads";
+import { requireOrganizationMembership, requireOrganizationRole } from "./queries/organizations";
+import { createTask } from "./queries/tasks";
+import { createActivity } from "./queries/activities";
 
 export const leadRouter = createRouter({
   list: authedQuery
@@ -24,7 +27,8 @@ export const leadRouter = createRouter({
         offset: z.number().optional(),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      await requireOrganizationMembership(ctx.user.id, input.organizationId);
       const { organizationId, ...filters } = input;
       return findLeadsByOrganization(organizationId, filters);
     }),
@@ -37,15 +41,19 @@ export const leadRouter = createRouter({
         source: z.string().optional(),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      await requireOrganizationMembership(ctx.user.id, input.organizationId);
       const { organizationId, ...filters } = input;
       return countLeadsByOrganization(organizationId, filters);
     }),
 
   getById: authedQuery
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      return findLeadById(input.id);
+    .query(async ({ input, ctx }) => {
+      const lead = await findLeadById(input.id);
+      if (!lead) return null;
+      await requireOrganizationMembership(ctx.user.id, lead.organizationId);
+      return lead;
     }),
 
   create: authedQuery
@@ -68,8 +76,9 @@ export const leadRouter = createRouter({
         customerId: z.number().optional(),
       })
     )
-    .mutation(async ({ input }) => {
-      return createLead({
+    .mutation(async ({ input, ctx }) => {
+      await requireOrganizationRole(ctx.user.id, input.organizationId, ["owner", "admin", "manager", "member"]);
+      const lead = await createLead({
         organizationId: input.organizationId,
         firstName: input.firstName,
         lastName: input.lastName,
@@ -86,6 +95,11 @@ export const leadRouter = createRouter({
         notes: input.notes,
         customerId: input.customerId,
       });
+      if (lead) {
+        await createTask({ organizationId: lead.organizationId, leadId: lead.id, title: `Follow up with ${lead.firstName} ${lead.lastName}`, type: "follow_up", priority: lead.priority ?? "medium", status: "pending", assignedTo: lead.assignedTo, dueDate: new Date(Date.now() + 24 * 60 * 60 * 1000) });
+        await createActivity({ organizationId: lead.organizationId, actorId: ctx.user.id, actorType: "user", entityType: "lead", entityId: lead.id, action: "Lead created", description: `Lead ${lead.firstName} ${lead.lastName} created with a follow-up task` });
+      }
+      return lead;
     }),
 
   update: authedQuery
@@ -106,21 +120,28 @@ export const leadRouter = createRouter({
         notes: z.string().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const { id, ...data } = input;
+      const lead = await findLeadById(id);
+      if (!lead) return null;
+      await requireOrganizationRole(ctx.user.id, lead.organizationId, ["owner", "admin", "manager", "member"]);
       return updateLead(id, data as Record<string, unknown>);
     }),
 
   delete: authedQuery
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const lead = await findLeadById(input.id);
+      if (!lead) return { success: true };
+      await requireOrganizationRole(ctx.user.id, lead.organizationId, ["owner", "admin", "manager"]);
       await deleteLead(input.id);
       return { success: true };
     }),
 
   stats: authedQuery
     .input(z.object({ organizationId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      await requireOrganizationMembership(ctx.user.id, input.organizationId);
       return getLeadStats(input.organizationId);
     }),
 });

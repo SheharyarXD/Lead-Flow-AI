@@ -15,8 +15,8 @@ if (accountSid && authToken) {
 
 export async function sendSMS(to: string, body: string) {
   if (!twilioClient || !fromPhone) {
-    console.log(`[SIMULATED SMS] TO: ${to} | BODY: ${body}`);
-    return { sid: "simulated_sms_sid", status: "queued" };
+    console.warn(`SMS not sent: Twilio is not configured (development mode). Recipient: ${to}`);
+    return { sid: null, status: "development_not_sent" as const };
   }
 
   try {

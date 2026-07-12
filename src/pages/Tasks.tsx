@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { trpc } from "@/providers/trpc";
+import { useOrganization } from "@/hooks/useOrganization";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -31,8 +32,6 @@ import {
   User,
 } from "lucide-react";
 
-const ORG_ID = 1;
-
 const priorityConfig: Record<string, { color: string; dot: string }> = {
   urgent: { color: "text-red-600 bg-red-50 border-red-200", dot: "bg-red-500" },
   high: { color: "text-orange-600 bg-orange-50 border-orange-200", dot: "bg-orange-500" },
@@ -51,6 +50,7 @@ const typeIcons: Record<string, string> = {
 };
 
 export default function Tasks() {
+  const { organizationId } = useOrganization();
   const [statusFilter, setStatusFilter] = useState("");
   const [priorityFilter, setPriorityFilter] = useState("");
   const [addOpen, setAddOpen] = useState(false);
@@ -65,18 +65,18 @@ export default function Tasks() {
   });
 
   const { data: tasks, isLoading } = trpc.task.list.useQuery({
-    organizationId: ORG_ID,
+    organizationId: organizationId!,
     status: statusFilter || undefined,
     priority: priorityFilter || undefined,
     limit: 50,
-  });
+  }, { enabled: !!organizationId });
 
   const { data: customers } = trpc.customer.list.useQuery({
-    organizationId: ORG_ID,
+    organizationId: organizationId!,
     limit: 100,
-  });
+  }, { enabled: !!organizationId });
 
-  const { data: stats } = trpc.task.stats.useQuery({ organizationId: ORG_ID });
+  const { data: stats } = trpc.task.stats.useQuery({ organizationId: organizationId! }, { enabled: !!organizationId });
   const utils = trpc.useUtils();
 
   const updateTask = trpc.task.update.useMutation({
@@ -109,7 +109,7 @@ export default function Tasks() {
   const handleCreateTask = () => {
     if (!newTask.title) return;
     createTask.mutate({
-      organizationId: ORG_ID,
+      organizationId: organizationId!,
       title: newTask.title,
       description: newTask.description || undefined,
       type: newTask.type,

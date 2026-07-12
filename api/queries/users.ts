@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, gt, isNull } from "drizzle-orm";
 import * as schema from "@db/schema";
 import type { InsertUser } from "@db/schema";
 import { getDb } from "./connection";
@@ -34,6 +34,27 @@ export async function findUserByEmail(email: string) {
 export async function createUser(data: InsertUser) {
   const [result] = await getDb().insert(schema.users).values(data).$returningId();
   return findUserById(result.id);
+}
+
+export async function updateUserPassword(userId: number, passwordHash: string) {
+  await getDb().update(schema.users).set({ passwordHash }).where(eq(schema.users.id, userId));
+}
+
+export async function createPasswordResetToken(userId: number, tokenHash: string, expiresAt: Date) {
+  await getDb().insert(schema.passwordResetTokens).values({ userId, tokenHash, expiresAt });
+}
+
+export async function consumePasswordResetToken(tokenHash: string) {
+  const token = await getDb().query.passwordResetTokens.findFirst({
+    where: and(
+      eq(schema.passwordResetTokens.tokenHash, tokenHash),
+      isNull(schema.passwordResetTokens.usedAt),
+      gt(schema.passwordResetTokens.expiresAt, new Date()),
+    ),
+  });
+  if (!token) return null;
+  await getDb().update(schema.passwordResetTokens).set({ usedAt: new Date() }).where(eq(schema.passwordResetTokens.id, token.id));
+  return token;
 }
 
 export async function upsertUser(data: InsertUser) {

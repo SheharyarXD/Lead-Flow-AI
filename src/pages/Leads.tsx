@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { trpc } from "@/providers/trpc";
+import { useOrganization } from "@/hooks/useOrganization";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,9 +33,8 @@ import {
   Download,
 } from "lucide-react";
 
-const ORG_ID = 1;
-
 export default function Leads() {
+  const { organizationId } = useOrganization();
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("");
@@ -43,14 +43,14 @@ export default function Leads() {
   const [addOpen, setAddOpen] = useState(false);
 
   const { data: leads, isLoading } = trpc.lead.list.useQuery({
-    organizationId: ORG_ID,
+    organizationId: organizationId!,
     status: statusFilter || undefined,
     source: sourceFilter || undefined,
     search: search || undefined,
     limit: 50,
-  });
+  }, { enabled: !!organizationId });
 
-  const { data: stats } = trpc.lead.stats.useQuery({ organizationId: ORG_ID });
+  const { data: stats } = trpc.lead.stats.useQuery({ organizationId: organizationId! }, { enabled: !!organizationId });
 
   const utils = trpc.useUtils();
   const createLead = trpc.lead.create.useMutation({
@@ -89,7 +89,7 @@ export default function Leads() {
   const handleCreateLead = () => {
     if (!newLead.firstName || !newLead.lastName) return;
     createLead.mutate({
-      organizationId: ORG_ID,
+      organizationId: organizationId!,
       firstName: newLead.firstName,
       lastName: newLead.lastName,
       email: newLead.email || undefined,

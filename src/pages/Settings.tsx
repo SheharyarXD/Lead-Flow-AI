@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { trpc } from "@/providers/trpc";
+import { useOrganization } from "@/hooks/useOrganization";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,12 +21,11 @@ import {
   Phone,
 } from "lucide-react";
 
-const ORG_ID = 1;
-
 export default function Settings() {
+  const { organizationId } = useOrganization();
   const utils = trpc.useUtils();
-  const { data: org } = trpc.organization.getById.useQuery({ id: ORG_ID });
-  const { data: members } = trpc.organization.members.useQuery({ organizationId: ORG_ID });
+  const { data: org } = trpc.organization.getById.useQuery({ id: organizationId! }, { enabled: !!organizationId });
+  const { data: members } = trpc.organization.members.useQuery({ organizationId: organizationId! }, { enabled: !!organizationId });
 
   const [businessForm, setBusinessForm] = useState({
     name: "",
@@ -66,13 +66,13 @@ export default function Settings() {
 
   const updateOrg = trpc.organization.update.useMutation({
     onSuccess: () => {
-      utils.organization.getById.invalidate({ id: ORG_ID });
+      if (organizationId) utils.organization.getById.invalidate({ id: organizationId });
     },
   });
 
   const handleSaveBusiness = () => {
     updateOrg.mutate({
-      id: ORG_ID,
+      id: organizationId!,
       name: businessForm.name,
       industry: businessForm.industry,
       phone: businessForm.phone,
@@ -88,7 +88,7 @@ export default function Settings() {
 
   const handleSaveAi = () => {
     updateOrg.mutate({
-      id: ORG_ID,
+      id: organizationId!,
       aiEnabled: aiForm.aiEnabled,
       greetingMessage: aiForm.greetingMessage,
       aiInstructions: aiForm.aiInstructions,
@@ -103,7 +103,7 @@ export default function Settings() {
   const handleToggleAi = (checked: boolean) => {
     setAiForm((prev) => ({ ...prev, aiEnabled: checked }));
     updateOrg.mutate({
-      id: ORG_ID,
+      id: organizationId!,
       aiEnabled: checked,
     });
   };

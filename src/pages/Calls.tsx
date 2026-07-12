@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { trpc } from "@/providers/trpc";
+import { useOrganization } from "@/hooks/useOrganization";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,9 +24,8 @@ import {
   Play,
 } from "lucide-react";
 
-const ORG_ID = 1;
-
 export default function Calls() {
+  const { organizationId } = useOrganization();
   const [searchQuery, setSearchQuery] = useState("");
   const [directionFilter, setDirectionFilter] = useState("");
   const [aiHandledFilter, setAiHandledFilter] = useState("");
@@ -33,11 +33,11 @@ export default function Calls() {
   const [activeTab, setActiveTab] = useState<"all" | "completed" | "missed" | "voicemail">("all");
 
   const { data: calls, isLoading } = trpc.calls.list.useQuery({
-    organizationId: ORG_ID,
+    organizationId: organizationId!,
     limit: 50,
-  });
+  }, { enabled: !!organizationId });
 
-  const { data: stats } = trpc.calls.stats.useQuery({ organizationId: ORG_ID });
+  const { data: stats } = trpc.calls.stats.useQuery({ organizationId: organizationId! }, { enabled: !!organizationId });
 
   const formatDurationMinSec = (secondsNum?: number | null) => {
     if (!secondsNum) return "00:00";
@@ -87,14 +87,14 @@ export default function Calls() {
   const totalCallsCount = stats?.total ?? 0;
   const missedCallsCount = stats?.missed ?? 0;
   const completedCallsCount = stats?.completed ?? 0;
-  const avgDurationFormatted = formatDurationMinSec(stats?.avgDuration ?? 195); // default 03:15
+  const avgDurationFormatted = formatDurationMinSec(stats?.avgDuration ?? 0);
 
   const aiHandledCount = calls?.filter(c => c.aiHandled).length ?? 0;
-  const aiHandledRate = calls && calls.length > 0 ? Math.round((aiHandledCount / calls.length) * 100) : 94;
+  const aiHandledRate = calls && calls.length > 0 ? Math.round((aiHandledCount / calls.length) * 100) : 0;
 
   const successOutcomeCount = calls?.filter(
     c => c.aiHandled && (c.aiSummary?.toLowerCase().includes("book") || c.aiSummary?.toLowerCase().includes("schedule") || c.aiSummary?.toLowerCase().includes("appoint"))
-  ).length ?? 28;
+  ).length ?? 0;
 
   // Filter call list dynamically based on search, tab, direction, and AI handler filters
   const filteredCalls = calls?.filter((call) => {

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { trpc } from "@/providers/trpc";
+import { useOrganization } from "@/hooks/useOrganization";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -32,9 +33,8 @@ import {
   X,
 } from "lucide-react";
 
-const ORG_ID = 1;
-
 export default function CalendarPage() {
+  const { organizationId } = useOrganization();
   const navigate = useNavigate();
   const utils = trpc.useUtils();
 
@@ -53,13 +53,13 @@ export default function CalendarPage() {
   startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
 
   const { data: appointments, isLoading } = trpc.appointment.list.useQuery({
-    organizationId: ORG_ID,
+    organizationId: organizationId!,
     startDate: startOfWeek,
     endDate: new Date(endOfMonth.getTime() + 14 * 24 * 60 * 60 * 1000), // extend range to cover grid
     limit: 100,
-  });
+  }, { enabled: !!organizationId });
 
-  const { data: stats } = trpc.appointment.stats.useQuery({ organizationId: ORG_ID });
+  const { data: stats } = trpc.appointment.stats.useQuery({ organizationId: organizationId! }, { enabled: !!organizationId });
 
   const createAppointment = trpc.appointment.create.useMutation({
     onSuccess: () => {
@@ -129,7 +129,7 @@ export default function CalendarPage() {
   const handleCreateAppointment = () => {
     if (!newAppt.title || !newAppt.startTime || !newAppt.endTime) return;
     createAppointment.mutate({
-      organizationId: ORG_ID,
+      organizationId: organizationId!,
       title: newAppt.title,
       description: newAppt.description || undefined,
       location: newAppt.location || undefined,

@@ -1,6 +1,7 @@
 import { getDb } from "./connection";
 import { organizations, organizationMembers, subscriptions } from "@db/schema";
 import { eq, and } from "drizzle-orm";
+import { TRPCError } from "@trpc/server";
 import type { InferInsertModel } from "drizzle-orm";
 
 export async function findOrganizationById(id: number) {
@@ -36,6 +37,20 @@ export async function findUserDefaultOrganization(userId: number) {
     },
   });
   return member?.organization ?? null;
+}
+
+export async function requireOrganizationMembership(userId: number, organizationId: number) {
+  const membership = await getDb().query.organizationMembers.findFirst({
+    where: and(eq(organizationMembers.organizationId, organizationId), eq(organizationMembers.userId, userId)),
+  });
+  if (!membership) throw new TRPCError({ code: "FORBIDDEN", message: "You do not have access to this organization" });
+  return membership;
+}
+
+export async function requireOrganizationRole(userId: number, organizationId: number, roles: Array<"owner" | "admin" | "manager" | "member">) {
+  const membership = await requireOrganizationMembership(userId, organizationId);
+  if (!roles.includes(membership.role)) throw new TRPCError({ code: "FORBIDDEN", message: "Your organization role cannot perform this action" });
+  return membership;
 }
 
 export async function createOrganization(data: InferInsertModel<typeof organizations>) {

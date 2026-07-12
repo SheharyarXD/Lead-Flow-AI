@@ -33,6 +33,24 @@ export const users = mysqlTable("users", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
+// Password reset tokens are stored hashed. The raw token is only ever returned by
+// the development reset flow or delivered by a future mail provider.
+export const passwordResetTokens = mysqlTable(
+  "passwordResetTokens",
+  {
+    id: serial("id").primaryKey(),
+    userId: bigint("userId", { mode: "number", unsigned: true }).notNull(),
+    tokenHash: varchar("tokenHash", { length: 128 }).notNull().unique(),
+    expiresAt: timestamp("expiresAt").notNull(),
+    usedAt: timestamp("usedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    userIdx: index("reset_user_idx").on(table.userId),
+    expiryIdx: index("reset_expiry_idx").on(table.expiresAt),
+  }),
+);
+
 // ─── Organizations ────────────────────────────────────────────────────────
 export const organizations = mysqlTable(
   "organizations",
@@ -51,6 +69,8 @@ export const organizations = mysqlTable(
     aiEnabled: boolean("aiEnabled").default(true),
     aiInstructions: text("aiInstructions"),
     greetingMessage: text("greetingMessage"),
+    services: json("services").$type<string[]>(),
+    onboardingCompletedAt: timestamp("onboardingCompletedAt"),
     status: mysqlEnum("status", ["active", "inactive", "suspended"]).default("active").notNull(),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),

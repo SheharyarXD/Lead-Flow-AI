@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useParams, useNavigate } from "react-router";
 import { trpc } from "@/providers/trpc";
+import { useOrganization } from "@/hooks/useOrganization";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -21,9 +22,8 @@ import {
   DollarSign,
 } from "lucide-react";
 
-const ORG_ID = 1;
-
 export default function ConversationThread() {
+  const { organizationId } = useOrganization();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const convId = parseInt(id || "0");
@@ -35,9 +35,9 @@ export default function ConversationThread() {
   const [isInternalNote, setIsInternalNote] = useState(false);
 
   const { data: conversations, isLoading: listLoading } = trpc.conversation.list.useQuery({
-    organizationId: ORG_ID,
+    organizationId: organizationId!,
     limit: 50,
-  });
+  }, { enabled: !!organizationId });
 
   const { data: conversation, isLoading: threadLoading } = trpc.conversation.getById.useQuery({ id: convId });
   const utils = trpc.useUtils();

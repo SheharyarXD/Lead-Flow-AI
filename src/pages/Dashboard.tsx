@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useNavigate } from "react-router";
 import { useAuth } from "@/hooks/useAuth";
+import { useOrganization } from "@/hooks/useOrganization";
 import {
   TrendingUp,
   Clock,
@@ -20,8 +21,6 @@ import {
   MoreVertical,
   ChevronRight,
 } from "lucide-react";
-
-const ORG_ID = 1; // Demo organization
 
 function formatRelativeTime(dateInput?: Date | string | null): string {
   if (!dateInput) return "just now";
@@ -48,11 +47,12 @@ function formatRelativeTime(dateInput?: Date | string | null): string {
 
 export default function Dashboard() {
   const { user } = useAuth();
+  const { organizationId } = useOrganization();
   const navigate = useNavigate();
 
-  const { data: stats, isLoading: statsLoading } = trpc.dashboard.stats.useQuery({ organizationId: ORG_ID });
-  const { data: recentActivity, isLoading: activityLoading } = trpc.dashboard.activity.useQuery({ organizationId: ORG_ID, limit: 4 });
-  const { data: upcomingTasks, isLoading: tasksLoading } = trpc.dashboard.upcomingTasks.useQuery({ organizationId: ORG_ID, limit: 3 });
+  const { data: stats, isLoading: statsLoading } = trpc.dashboard.stats.useQuery({ organizationId: organizationId! }, { enabled: !!organizationId });
+  const { data: recentActivity, isLoading: activityLoading } = trpc.dashboard.activity.useQuery({ organizationId: organizationId!, limit: 4 }, { enabled: !!organizationId });
+  const { data: upcomingTasks, isLoading: tasksLoading } = trpc.dashboard.upcomingTasks.useQuery({ organizationId: organizationId!, limit: 3 }, { enabled: !!organizationId });
 
   const greeting = () => {
     const hour = new Date().getHours();

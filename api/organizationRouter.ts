@@ -12,7 +12,10 @@ import {
   addOrganizationMember,
   createSubscription,
   findUserDefaultOrganization,
+  requireOrganizationMembership,
+  requireOrganizationRole,
 } from "./queries/organizations";
+import { createKBEntry } from "./queries/knowledgeBase";
 
 export const organizationRouter = createRouter({
   list: authedQuery.query(async ({ ctx }) => {
@@ -29,7 +32,8 @@ export const organizationRouter = createRouter({
 
   getById: authedQuery
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      await requireOrganizationMembership(ctx.user.id, input.id);
       return findOrganizationById(input.id);
     }),
 
@@ -96,14 +100,44 @@ export const organizationRouter = createRouter({
         greetingMessage: z.string().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const { id, ...data } = input;
+      await requireOrganizationRole(ctx.user.id, id, ["owner", "admin", "manager"]);
       return updateOrganization(id, data as Record<string, unknown>);
     }),
 
   members: authedQuery
     .input(z.object({ organizationId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      await requireOrganizationMembership(ctx.user.id, input.organizationId);
       return findOrganizationMembers(input.organizationId);
+    }),
+
+  completeOnboarding: authedQuery
+    .input(z.object({
+      organizationId: z.number(),
+      name: z.string().min(1),
+      industry: z.string().min(1),
+      phone: z.string().min(3),
+      businessHours: z.record(z.string(), z.object({ open: z.string(), close: z.string() })),
+      services: z.array(z.string().min(1)).max(50),
+      faqs: z.array(z.object({ question: z.string().min(1), answer: z.string().min(1) })).max(50),
+      aiInstructions: z.string().max(10000).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      await requireOrganizationRole(ctx.user.id, input.organizationId, ["owner"]);
+      const organization = await updateOrganization(input.organizationId, {
+        name: input.name,
+        industry: input.industry,
+        phone: input.phone,
+        businessHours: input.businessHours,
+        services: input.services,
+        aiInstructions: input.aiInstructions,
+        onboardingCompletedAt: new Date(),
+      });
+      for (const faq of input.faqs) {
+        await createKBEntry({ organizationId: input.organizationId, type: "faq", title: faq.question, content: faq.answer, createdBy: ctx.user.id, aiEnabled: true });
+      }
+      return organization;
     }),
 });

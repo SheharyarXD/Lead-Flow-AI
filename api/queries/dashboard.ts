@@ -1,5 +1,5 @@
 import { getDb } from "./connection";
-import { leads, conversations, calls, tasks, appointments, activities, subscriptions, organizations } from "@db/schema";
+import { leads, conversations, calls, tasks, appointments, activities, subscriptions, organizations, customers, messages } from "@db/schema";
 import { eq, and, gte, desc, count, sql } from "drizzle-orm";
 
 export async function getDashboardStats(organizationId: number) {
@@ -18,6 +18,13 @@ export async function getDashboardStats(organizationId: number) {
   const totalConversations = await getDb()
     .select({ count: count() })
     .from(conversations)
+    .where(eq(conversations.organizationId, organizationId));
+
+  const totalCustomers = await getDb().select({ count: count() }).from(customers).where(eq(customers.organizationId, organizationId));
+  const totalMessages = await getDb()
+    .select({ count: count() })
+    .from(messages)
+    .innerJoin(conversations, eq(messages.conversationId, conversations.id))
     .where(eq(conversations.organizationId, organizationId));
 
   const openConversations = await getDb()
@@ -89,8 +96,10 @@ export async function getDashboardStats(organizationId: number) {
 
   return {
     totalLeads: totalLeads[0].count,
+    totalCustomers: totalCustomers[0].count,
     newLeads: newLeads[0].count,
     totalConversations: totalConversations[0].count,
+    totalMessages: totalMessages[0].count,
     openConversations: openConversations[0].count,
     totalCalls: totalCalls[0].count,
     completedCalls: completedCalls[0].count,

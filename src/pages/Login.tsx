@@ -8,13 +8,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Loader2, PhoneCall } from "lucide-react";
 
 export default function Login() {
@@ -26,7 +19,6 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
-  const [role, setRole] = useState<"admin" | "manager" | "collector">("admin");
   
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -55,7 +47,6 @@ export default function Login() {
       setEmail(data.email || "");
       setPassword("");
       setName("");
-      setRole("admin");
       setError(null);
     },
     onError: (err) => {
@@ -105,7 +96,7 @@ export default function Login() {
       return;
     }
 
-    signupMutation.mutate({ email, password, name, role });
+    signupMutation.mutate({ email, password, name });
   };
 
   const isMutating = loginMutation.isPending || signupMutation.isPending;
@@ -266,22 +257,6 @@ export default function Login() {
                     required
                     className="bg-white border-zinc-200 text-xs rounded-xl text-zinc-950 placeholder:text-zinc-400 h-10 px-3.5 focus-visible:ring-2 focus-visible:ring-indigo-100 focus-visible:border-indigo-500 transition-all duration-200 shadow-none"
                   />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="signup-role" className="text-xs font-bold text-zinc-500">
-                    Role
-                  </Label>
-                  <Select value={role} onValueChange={(val: any) => setRole(val)}>
-                    <SelectTrigger id="signup-role" className="bg-white border-zinc-200 text-xs rounded-xl text-zinc-950 placeholder:text-zinc-400 h-10 px-3.5 shadow-none w-full font-medium focus-visible:ring-2 focus-visible:ring-indigo-100 focus-visible:border-indigo-500 transition-all duration-200">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-white border-zinc-200 text-zinc-950">
-                      <SelectItem value="admin" className="focus:bg-zinc-50 focus:text-zinc-950 cursor-pointer">Admin</SelectItem>
-                      <SelectItem value="manager" className="focus:bg-zinc-50 focus:text-zinc-950 cursor-pointer">Manager</SelectItem>
-                      <SelectItem value="collector" className="focus:bg-zinc-50 focus:text-zinc-950 cursor-pointer">Collector</SelectItem>
-                    </SelectContent>
-                  </Select>
                 </div>
 
                 <div className="space-y-2">

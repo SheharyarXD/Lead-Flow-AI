@@ -12,6 +12,13 @@ import {
 } from "./queries/organizations";
 import { hashPassword, verifyPassword } from "./lib/crypto";
 import { signSessionToken } from "./kimi/session";
+import { createHash, randomBytes } from "crypto";
+import { consumePasswordResetToken, createPasswordResetToken, updateUserPassword } from "./queries/users";
+
+const passwordSchema = z.string().min(8, "Password must be at least 8 characters")
+  .refine((value) => /[A-Z]/.test(value), "Password must contain at least one capital letter")
+  .refine((value) => /\d/.test(value), "Password must contain at least one number");
+const hashResetToken = (token: string) => createHash("sha256").update(token).digest("hex");
 
 export const authRouter = createRouter({
   me: authedQuery.query((opts) => opts.ctx.user),
@@ -63,19 +70,8 @@ export const authRouter = createRouter({
     .input(
       z.object({
         email: z.string().email(),
-        password: z
-          .string()
-          .min(6, "Password must be at least 6 characters")
-          .refine(
-            (val) => /[A-Z]/.test(val),
-            "Password must contain at least one capital letter",
-          )
-          .refine(
-            (val) => /\d/.test(val),
-            "Password must contain at least one number",
-          ),
+        password: passwordSchema,
         name: z.string().min(2, "Name must be at least 2 characters"),
-        role: z.enum(["admin", "manager", "collector"]).default("admin"),
       }),
     )
     .mutation(async ({ input }) => {
@@ -94,7 +90,8 @@ export const authRouter = createRouter({
         name: input.name,
         passwordHash,
         avatar: "",
-        role: input.role === "admin" ? "admin" : "user",
+        // Public registration can only create a standard platform user.
+        role: "user",
       });
 
       if (!newUser) {
@@ -113,15 +110,10 @@ export const authRouter = createRouter({
       });
 
       if (org) {
-        // Link user as the selected role of the organization
-        let memberRole: "owner" | "admin" | "manager" | "member" = "owner";
-        if (input.role === "manager") memberRole = "manager";
-        if (input.role === "collector") memberRole = "member";
-
         await addOrganizationMember({
           organizationId: org.id,
           userId: newUser.id,
-          role: memberRole,
+          role: "owner",
           isDefault: true,
         });
 
@@ -139,6 +131,28 @@ export const authRouter = createRouter({
       }
 
       return { success: true, email: newUser.email };
+    }),
+
+  forgotPassword: publicQuery
+    .input(z.object({ email: z.string().email() }))
+    .mutation(async ({ input }) => {
+      const user = await findUserByEmail(input.email);
+      // Do not reveal whether an email is registered.
+      if (!user) return { success: true };
+      const rawToken = randomBytes(32).toString("hex");
+      await createPasswordResetToken(user.id, hashResetToken(rawToken), new Date(Date.now() + 60 * 60 * 1000));
+      // A mail delivery implementation can consume this value. It is intentionally
+      // exposed only outside production to support a basic local MVP reset flow.
+      return { success: true, ...(process.env.NODE_ENV !== "production" ? { resetToken: rawToken } : {}) };
+    }),
+
+  resetPassword: publicQuery
+    .input(z.object({ token: z.string().min(32), password: passwordSchema }))
+    .mutation(async ({ input }) => {
+      const reset = await consumePasswordResetToken(hashResetToken(input.token));
+      if (!reset) throw new TRPCError({ code: "BAD_REQUEST", message: "Reset token is invalid or expired" });
+      await updateUserPassword(reset.userId, hashPassword(input.password));
+      return { success: true };
     }),
 
   logout: authedQuery.mutation(async ({ ctx }) => {
