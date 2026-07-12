@@ -527,7 +527,7 @@ export default function ConversationThread() {
                     Consumer
                   </Badge>
                   <Badge className="bg-zinc-50 hover:bg-zinc-50 text-zinc-500 border border-zinc-200 text-[9px] font-bold px-1.5 py-0.5 rounded shadow-none">
-                    SMS Lead
+                    {conversation.channel === "email" ? "Email Lead" : (conversation.channel === "web_chat" || conversation.channel === "ai_chat") ? "Web Lead" : "SMS Lead"}
                   </Badge>
                 </div>
               </div>
