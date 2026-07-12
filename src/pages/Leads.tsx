@@ -515,7 +515,13 @@ export default function Leads() {
                     {/* Actions column */}
                     <div className="col-span-1 flex items-center justify-end gap-3 text-zinc-400">
                       <button 
-                        onClick={() => navigate("/calls")} 
+                        onClick={() => {
+                          if (lead.phone) {
+                            window.open(`tel:${lead.phone}`);
+                          } else {
+                            alert("This lead does not have a phone number saved.");
+                          }
+                        }} 
                         className="hover:text-zinc-900 transition-colors p-0.5"
                       >
                         <Phone className="w-3.5 h-3.5" />
