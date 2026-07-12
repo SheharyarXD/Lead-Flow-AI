@@ -1,5 +1,6 @@
 import { useParams, useNavigate } from "react-router";
 import { trpc } from "@/providers/trpc";
+import { useOrganization } from "@/hooks/useOrganization";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -30,6 +31,15 @@ export default function CustomerDetail() {
 
   const { data: customer, isLoading } = trpc.customer.getById.useQuery({ id: customerId });
   const utils = trpc.useUtils();
+  const { organizationId } = useOrganization();
+
+  const createConversation = trpc.conversation.create.useMutation({
+    onSuccess: (newConv) => {
+      if (newConv) {
+        navigate(`/conversations/${newConv.id}`);
+      }
+    },
+  });
 
   const updateMutation = trpc.customer.update.useMutation({
     onSuccess: () => {
@@ -169,7 +179,11 @@ export default function CustomerDetail() {
     if (customer.conversations && customer.conversations.length > 0) {
       navigate(`/conversations/${customer.conversations[0].id}`);
     } else {
-      navigate("/conversations");
+      createConversation.mutate({
+        organizationId: organizationId!,
+        customerId: customerId,
+        channel: "sms",
+      });
     }
   };
 

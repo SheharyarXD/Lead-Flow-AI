@@ -152,12 +152,13 @@ export default function ConversationThread() {
     );
   }
 
-  const customerName = conversation.customer
-    ? `${conversation.customer.firstName} ${conversation.customer.lastName}`
+  const contact = conversation.customer || conversation.lead;
+  const customerName = contact
+    ? `${contact.firstName} ${contact.lastName}`
     : "Unknown Customer";
 
-  const customerInitials = conversation.customer
-    ? `${conversation.customer.firstName[0] || ""}${conversation.customer.lastName[0] || ""}`
+  const customerInitials = contact
+    ? `${contact.firstName[0] || ""}${contact.lastName[0] || ""}`
     : "U";
 
   // Dynamic Intent Score calculation
@@ -230,11 +231,12 @@ export default function ConversationThread() {
               ))
             ) : (
               filteredConversations?.map((conv) => {
-                const initials = conv.customer
-                  ? `${conv.customer.firstName[0] || ""}${conv.customer.lastName[0] || ""}`
+                const contact = conv.customer || conv.lead;
+                const initials = contact
+                  ? `${contact.firstName[0] || ""}${contact.lastName[0] || ""}`
                   : "U";
-                const name = conv.customer
-                  ? `${conv.customer.firstName} ${conv.customer.lastName}`
+                const name = contact
+                  ? `${contact.firstName} ${contact.lastName}`
                   : "Unknown Customer";
                 
                 const isSelected = conv.id === convId;

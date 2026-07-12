@@ -120,7 +120,8 @@ export default function Conversations() {
   // Client-side filtering to ensure zero-latency feedback
   const filteredConversations = conversations?.filter((conv) => {
     // 1. Search Query Filter
-    const fullName = `${conv.customer?.firstName || ""} ${conv.customer?.lastName || ""}`.toLowerCase();
+    const contact = conv.customer || conv.lead;
+    const fullName = `${contact?.firstName || ""} ${contact?.lastName || ""}`.toLowerCase();
     const matchesSearch = fullName.includes(searchQuery.toLowerCase()) || 
       (conv.lastMessagePreview && conv.lastMessagePreview.toLowerCase().includes(searchQuery.toLowerCase()));
     
@@ -194,11 +195,12 @@ export default function Conversations() {
               </div>
             ) : (
               filteredConversations.map((conv) => {
-                const customerInitials = conv.customer
-                  ? `${conv.customer.firstName[0] || ""}${conv.customer.lastName[0] || ""}`
+                const contact = conv.customer || conv.lead;
+                const customerInitials = contact
+                  ? `${contact.firstName[0] || ""}${contact.lastName[0] || ""}`
                   : "U";
-                const customerName = conv.customer
-                  ? `${conv.customer.firstName} ${conv.customer.lastName}`
+                const customerName = contact
+                  ? `${contact.firstName} ${contact.lastName}`
                   : "Unknown Customer";
                 
                 const isUnread = (conv.unreadCount ?? 0) > 0 || conv.status === "open";
