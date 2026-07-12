@@ -336,7 +336,7 @@ export default function ConversationThread() {
                 </Badge>
               </h2>
               <p className="text-[10px] text-zinc-400 font-semibold mt-0.5">
-                {conversation.customer?.phone || "+1 (555) 012-3456"} • Phoenix, AZ
+                {conversation.customer?.phone || conversation.lead?.phone || "No Phone Number"} • Phoenix, AZ
               </p>
             </div>
           </div>
