@@ -15,6 +15,7 @@ import {
   Bot,
   Zap,
   ArrowRight,
+  Mail,
 } from "lucide-react";
 
 export default function Conversations() {
@@ -35,6 +36,7 @@ export default function Conversations() {
   const [newLastName, setNewLastName] = useState("");
   const [newPhone, setNewPhone] = useState("");
   const [newEmail, setNewEmail] = useState("");
+  const [newChannel, setNewChannel] = useState<"sms" | "email">("sms");
   const [modalTab, setModalTab] = useState<"select" | "create">("select");
   const [dialogError, setDialogError] = useState<string | null>(null);
 
@@ -70,7 +72,7 @@ export default function Conversations() {
       createConversationMutation.mutate({
         organizationId: organizationId!,
         leadId: newLead.id,
-        channel: "sms",
+        channel: newChannel,
       });
     },
     onError: (err) => {
@@ -79,8 +81,16 @@ export default function Conversations() {
   });
 
   const handleCreateAndStart = () => {
-    if (!newFirstName.trim() || !newLastName.trim() || !newPhone.trim()) {
-      setDialogError("First name, last name, and phone number are required.");
+    if (!newFirstName.trim() || !newLastName.trim()) {
+      setDialogError("First name and last name are required.");
+      return;
+    }
+    if (newChannel === "sms" && !newPhone.trim()) {
+      setDialogError("Phone number is required to send SMS.");
+      return;
+    }
+    if (newChannel === "email" && !newEmail.trim()) {
+      setDialogError("Email address is required to send Email.");
       return;
     }
     setDialogError(null);
@@ -88,7 +98,7 @@ export default function Conversations() {
       organizationId: organizationId!,
       firstName: newFirstName,
       lastName: newLastName,
-      phone: newPhone,
+      phone: newPhone || undefined,
       email: newEmail || undefined,
     });
   };
@@ -505,18 +515,10 @@ export default function Conversations() {
                         .map((lead) => (
                           <div
                             key={lead.id}
-                            onClick={() => {
-                              setDialogError(null);
-                              createConversationMutation.mutate({
-                                organizationId: organizationId!,
-                                leadId: lead.id,
-                                channel: "sms",
-                              });
-                            }}
-                            className="p-3 text-left hover:bg-zinc-50 cursor-pointer flex items-center justify-between transition-colors group"
+                            className="p-3 text-left hover:bg-zinc-50 flex items-center justify-between transition-colors group gap-4"
                           >
-                            <div>
-                              <span className="text-xs font-bold text-zinc-950 block group-hover:text-indigo-600 transition-colors">
+                            <div className="min-w-0 flex-1">
+                              <span className="text-xs font-bold text-zinc-950 block truncate group-hover:text-indigo-600 transition-colors">
                                 {lead.firstName} {lead.lastName}
                               </span>
                               {lead.phone && (
@@ -525,9 +527,44 @@ export default function Conversations() {
                                 </span>
                               )}
                             </div>
-                            <span className="text-[9px] bg-indigo-50 border border-indigo-150 text-indigo-600 font-bold px-2 py-0.5 rounded-full capitalize">
-                              {lead.status}
-                            </span>
+                            <div className="flex items-center gap-1.5 shrink-0 select-none">
+                              <Button
+                                onClick={() => {
+                                  setDialogError(null);
+                                  createConversationMutation.mutate({
+                                    organizationId: organizationId!,
+                                    leadId: lead.id,
+                                    channel: "sms",
+                                  });
+                                }}
+                                variant="outline"
+                                size="sm"
+                                className="h-7 px-2 text-[10px] font-bold border-zinc-200 text-zinc-700 hover:bg-indigo-50 hover:text-indigo-650 hover:border-indigo-200 transition-colors flex items-center gap-1 shadow-none"
+                              >
+                                <MessageSquare className="w-2.5 h-2.5" />
+                                SMS
+                              </Button>
+                              <Button
+                                onClick={() => {
+                                  if (!lead.email) {
+                                    setDialogError("This lead does not have an email address saved.");
+                                    return;
+                                  }
+                                  setDialogError(null);
+                                  createConversationMutation.mutate({
+                                    organizationId: organizationId!,
+                                    leadId: lead.id,
+                                    channel: "email",
+                                  });
+                                }}
+                                variant="outline"
+                                size="sm"
+                                className="h-7 px-2 text-[10px] font-bold border-zinc-200 text-zinc-700 hover:bg-indigo-50 hover:text-indigo-650 hover:border-indigo-200 transition-colors flex items-center gap-1 shadow-none"
+                              >
+                                <Mail className="w-2.5 h-2.5" />
+                                Email
+                              </Button>
+                            </div>
                           </div>
                         ))
                     )}
@@ -558,8 +595,41 @@ export default function Conversations() {
                     </div>
                   </div>
 
+                   {/* Preferred Channel Selector */}
+                  <div className="space-y-1.5 text-left">
+                    <label className="text-[10px] font-extrabold text-zinc-550 block">Start Conversation Via *</label>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setNewChannel("sms")}
+                        className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-all flex items-center justify-center gap-1.5 ${
+                          newChannel === "sms"
+                            ? "bg-indigo-50 border-indigo-200 text-indigo-600 shadow-sm"
+                            : "bg-white border-zinc-200 text-zinc-650 hover:bg-zinc-50"
+                        }`}
+                      >
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        SMS Message
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setNewChannel("email")}
+                        className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-all flex items-center justify-center gap-1.5 ${
+                          newChannel === "email"
+                            ? "bg-indigo-50 border-indigo-200 text-indigo-600 shadow-sm"
+                            : "bg-white border-zinc-200 text-zinc-650 hover:bg-zinc-50"
+                        }`}
+                      >
+                        <Mail className="w-3.5 h-3.5" />
+                        Email Message
+                      </button>
+                    </div>
+                  </div>
+
                   <div className="space-y-1 text-left">
-                    <label className="text-[10px] font-bold text-zinc-655">Phone Number *</label>
+                    <label className="text-[10px] font-bold text-zinc-655">
+                      Phone Number {newChannel === "sms" ? "*" : "(Optional)"}
+                    </label>
                     <input
                       type="text"
                       placeholder="e.g. +15551234567"
@@ -570,7 +640,9 @@ export default function Conversations() {
                   </div>
 
                   <div className="space-y-1 text-left">
-                    <label className="text-[10px] font-bold text-zinc-655">Email Address (Optional)</label>
+                    <label className="text-[10px] font-bold text-zinc-655">
+                      Email Address {newChannel === "email" ? "*" : "(Optional)"}
+                    </label>
                     <input
                       type="email"
                       placeholder="e.g. john@example.com"
