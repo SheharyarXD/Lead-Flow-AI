@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { createRouter, authedQuery } from "./middleware";
 import { conversations } from "@db/schema";
+import { eq, and } from "drizzle-orm";
+import { getDb } from "./queries/connection";
 import {
   findConversationsByOrganization,
   findConversationById,
@@ -52,6 +54,21 @@ export const conversationRouter = createRouter({
     )
     .mutation(async ({ input, ctx }) => {
       await requireOrganizationRole(ctx.user.id, input.organizationId, ["owner", "admin", "manager", "member"]);
+      
+      // Check if an open conversation already exists for this lead/customer and channel
+      const existing = await getDb().query.conversations.findFirst({
+        where: and(
+          eq(conversations.organizationId, input.organizationId),
+          eq(conversations.channel, input.channel as typeof conversations.$inferSelect.channel),
+          eq(conversations.status, "open"),
+          input.leadId ? eq(conversations.leadId, input.leadId) : eq(conversations.customerId, input.customerId!)
+        ),
+      });
+
+      if (existing) {
+        return findConversationById(existing.id);
+      }
+
       return createConversation({
         organizationId: input.organizationId,
         customerId: input.customerId,
