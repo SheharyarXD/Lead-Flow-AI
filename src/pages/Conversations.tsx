@@ -28,6 +28,71 @@ export default function Conversations() {
     limit: 50,
   }, { enabled: !!organizationId });
 
+  // New Message Modal states
+  const [isNewMessageOpen, setIsNewMessageOpen] = useState(false);
+  const [searchLeadQuery, setSearchLeadQuery] = useState("");
+  const [newFirstName, setNewFirstName] = useState("");
+  const [newLastName, setNewLastName] = useState("");
+  const [newPhone, setNewPhone] = useState("");
+  const [newEmail, setNewEmail] = useState("");
+  const [modalTab, setModalTab] = useState<"select" | "create">("select");
+  const [dialogError, setDialogError] = useState<string | null>(null);
+
+  // Fetch leads list
+  const { data: leadsList, isLoading: leadsLoading } = trpc.lead.list.useQuery(
+    { organizationId: organizationId! },
+    { enabled: !!organizationId && isNewMessageOpen }
+  );
+
+  const utils = trpc.useUtils();
+
+  const createConversationMutation = trpc.conversation.create.useMutation({
+    onSuccess: (newConv) => {
+      if (!newConv) {
+        setDialogError("Failed to start conversation. Please try again.");
+        return;
+      }
+      utils.conversation.list.invalidate();
+      setIsNewMessageOpen(false);
+      navigate(`/conversations/${newConv.id}`);
+    },
+    onError: (err) => {
+      setDialogError(err.message || "Failed to create conversation.");
+    },
+  });
+
+  const createLeadMutation = trpc.lead.create.useMutation({
+    onSuccess: (newLead) => {
+      if (!newLead) {
+        setDialogError("Failed to create lead. Please try again.");
+        return;
+      }
+      createConversationMutation.mutate({
+        organizationId: organizationId!,
+        leadId: newLead.id,
+        channel: "sms",
+      });
+    },
+    onError: (err) => {
+      setDialogError(err.message || "Failed to create lead.");
+    },
+  });
+
+  const handleCreateAndStart = () => {
+    if (!newFirstName.trim() || !newLastName.trim() || !newPhone.trim()) {
+      setDialogError("First name, last name, and phone number are required.");
+      return;
+    }
+    setDialogError(null);
+    createLeadMutation.mutate({
+      organizationId: organizationId!,
+      firstName: newFirstName,
+      lastName: newLastName,
+      phone: newPhone,
+      email: newEmail || undefined,
+    });
+  };
+
   // Dynamic Relative Time Formatter
   const formatRelativeTime = (dateInput?: Date | string | null): string => {
     if (!dateInput) return "just now";
@@ -227,7 +292,14 @@ export default function Conversations() {
           {/* Quick Action cards */}
           <div className="grid grid-cols-2 gap-4 w-full mt-8">
             <div 
-              onClick={() => navigate("/leads")}
+              onClick={() => {
+                setDialogError(null);
+                setNewFirstName("");
+                setNewLastName("");
+                setNewPhone("");
+                setNewEmail("");
+                setIsNewMessageOpen(true);
+              }}
               className="bg-white border border-zinc-200 hover:border-indigo-200 rounded-xl p-4 text-left cursor-pointer transition-colors shadow-sm group"
             >
               <span className="text-xs font-bold text-zinc-950 flex items-center gap-1 group-hover:text-indigo-600 transition-colors">
@@ -268,10 +340,17 @@ export default function Conversations() {
             AI Insights
           </button>
           <button 
-            onClick={() => navigate("/leads")}
+            onClick={() => {
+              setDialogError(null);
+              setNewFirstName("");
+              setNewLastName("");
+              setNewPhone("");
+              setNewEmail("");
+              setIsNewMessageOpen(true);
+            }}
             className="flex items-center justify-center w-10 h-10 rounded-full bg-indigo-600 text-white shadow-md hover:bg-indigo-700 transition-all active:scale-[0.95]"
           >
-            <Plus className="w-5 h-5" strokeWidth={2.5} />
+            <Plus className="w-5 h-5" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
           </button>
         </div>
       </div>
@@ -342,6 +421,178 @@ export default function Conversations() {
           </div>
         </div>
       </div>
+
+      {/* New Message Dialog Modal */}
+      {isNewMessageOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-white border border-zinc-200 shadow-2xl rounded-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]">
+            
+            {/* Header */}
+            <div className="p-4 border-b border-zinc-100 flex items-center justify-between bg-zinc-50/50">
+              <h3 className="text-sm font-extrabold text-zinc-950">Start New Message</h3>
+              <button 
+                onClick={() => {
+                  setIsNewMessageOpen(false);
+                  setDialogError(null);
+                }}
+                className="text-zinc-400 hover:text-zinc-950 p-1 font-bold text-lg leading-none transition-colors"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Tabs Selector */}
+            <div className="flex border-b border-zinc-100">
+              <button
+                onClick={() => setModalTab("select")}
+                className={`flex-1 py-2.5 text-xs font-bold text-center border-b-2 transition-all ${
+                  modalTab === "select"
+                    ? "border-indigo-600 text-indigo-600 bg-indigo-50/10"
+                    : "border-transparent text-zinc-500 hover:text-zinc-800"
+                }`}
+              >
+                Select Existing Lead
+              </button>
+              <button
+                onClick={() => setModalTab("create")}
+                className={`flex-1 py-2.5 text-xs font-bold text-center border-b-2 transition-all ${
+                  modalTab === "create"
+                    ? "border-indigo-600 text-indigo-600 bg-indigo-50/10"
+                    : "border-transparent text-zinc-500 hover:text-zinc-800"
+                }`}
+              >
+                Add New Contact
+              </button>
+            </div>
+
+            {/* Error Message */}
+            {dialogError && (
+              <div className="px-4 py-2.5 bg-red-50 text-red-800 text-[10px] font-bold border-b border-red-100">
+                {dialogError}
+              </div>
+            )}
+
+            {/* Body */}
+            <div className="p-4 flex-1 overflow-y-auto min-h-0">
+              {modalTab === "select" ? (
+                <div className="space-y-3">
+                  {/* Search leads input */}
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400" />
+                    <input
+                      type="text"
+                      placeholder="Search leads by name or number..."
+                      value={searchLeadQuery}
+                      onChange={(e) => setSearchLeadQuery(e.target.value)}
+                      className="w-full pl-9 pr-4 py-1.5 bg-zinc-50 border border-zinc-200 rounded-lg text-xs text-zinc-950 placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
+                    />
+                  </div>
+
+                  {/* Leads List */}
+                  <div className="space-y-1 max-h-[250px] overflow-y-auto border border-zinc-150 rounded-xl divide-y divide-zinc-100 bg-white">
+                    {leadsLoading ? (
+                      <div className="p-4 text-center text-xs text-zinc-400 font-medium">Loading leads...</div>
+                    ) : !leadsList || leadsList.length === 0 ? (
+                      <div className="p-4 text-center text-xs text-zinc-400 font-medium">No leads found.</div>
+                    ) : (
+                      leadsList
+                        .filter(lead => 
+                          `${lead.firstName || ""} ${lead.lastName || ""}`.toLowerCase().includes(searchLeadQuery.toLowerCase()) ||
+                          (lead.phone && lead.phone.includes(searchLeadQuery))
+                        )
+                        .map((lead) => (
+                          <div
+                            key={lead.id}
+                            onClick={() => {
+                              setDialogError(null);
+                              createConversationMutation.mutate({
+                                organizationId: organizationId!,
+                                leadId: lead.id,
+                                channel: "sms",
+                              });
+                            }}
+                            className="p-3 text-left hover:bg-zinc-50 cursor-pointer flex items-center justify-between transition-colors group"
+                          >
+                            <div>
+                              <span className="text-xs font-bold text-zinc-950 block group-hover:text-indigo-600 transition-colors">
+                                {lead.firstName} {lead.lastName}
+                              </span>
+                              {lead.phone && (
+                                <span className="text-[10px] text-zinc-400 font-medium block mt-0.5">
+                                  {lead.phone}
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[9px] bg-indigo-50 border border-indigo-150 text-indigo-600 font-bold px-2 py-0.5 rounded-full capitalize">
+                              {lead.status}
+                            </span>
+                          </div>
+                        ))
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3 pt-1">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1 text-left">
+                      <label className="text-[10px] font-bold text-zinc-655">First Name *</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. John"
+                        value={newFirstName}
+                        onChange={(e) => setNewFirstName(e.target.value)}
+                        className="w-full px-3 py-1.5 bg-zinc-50 border border-zinc-200 rounded-lg text-xs text-zinc-950 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 shadow-none"
+                      />
+                    </div>
+                    <div className="space-y-1 text-left">
+                      <label className="text-[10px] font-bold text-zinc-655">Last Name *</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Doe"
+                        value={newLastName}
+                        onChange={(e) => setNewLastName(e.target.value)}
+                        className="w-full px-3 py-1.5 bg-zinc-50 border border-zinc-200 rounded-lg text-xs text-zinc-950 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 shadow-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1 text-left">
+                    <label className="text-[10px] font-bold text-zinc-655">Phone Number *</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. +15551234567"
+                      value={newPhone}
+                      onChange={(e) => setNewPhone(e.target.value)}
+                      className="w-full px-3 py-1.5 bg-zinc-50 border border-zinc-200 rounded-lg text-xs text-zinc-950 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 shadow-none"
+                    />
+                  </div>
+
+                  <div className="space-y-1 text-left">
+                    <label className="text-[10px] font-bold text-zinc-655">Email Address (Optional)</label>
+                    <input
+                      type="email"
+                      placeholder="e.g. john@example.com"
+                      value={newEmail}
+                      onChange={(e) => setNewEmail(e.target.value)}
+                      className="w-full px-3 py-1.5 bg-zinc-50 border border-zinc-200 rounded-lg text-xs text-zinc-950 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 shadow-none"
+                    />
+                  </div>
+
+                  <Button
+                    onClick={handleCreateAndStart}
+                    disabled={createLeadMutation.isPending || createConversationMutation.isPending}
+                    className="w-full mt-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold h-9 text-xs rounded-lg shadow-sm flex items-center justify-center gap-1 transition-colors"
+                  >
+                    {createLeadMutation.isPending || createConversationMutation.isPending
+                      ? "Starting..."
+                      : "Create Lead & Start Chat"}
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
