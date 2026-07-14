@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { toast } from "sonner";
 import { trpc } from "@/providers/trpc";
 import { useOrganization } from "@/hooks/useOrganization";
 import { Card, CardContent } from "@/components/ui/card";
@@ -20,6 +21,22 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { useNavigate } from "react-router";
 import {
@@ -31,33 +48,68 @@ import {
   Calendar,
   MoreVertical,
   Download,
+  Trash2,
 } from "lucide-react";
+
+type Lead = {
+  id: number;
+  firstName: string;
+  lastName: string;
+  email?: string | null;
+  phone?: string | null;
+  company?: string | null;
+  status: string;
+  source?: string | null;
+  priority?: string | null;
+  estimatedValue?: number | null;
+  tags?: string[] | null;
+  lastActivityAt?: string | Date | null;
+  createdAt: string | Date;
+  appointments?: Array<{ startTime: string | Date }>;
+};
+
+const formatCurrency = (value?: number | null) =>
+  value == null ? "—" : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(value);
 
 export default function Leads() {
   const { organizationId } = useOrganization();
   const navigate = useNavigate();
+  const utils = trpc.useUtils();
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("");
-  const [sourceFilter, setSourceFilter] = useState<string>("");
-  const [tagFilter, setTagFilter] = useState<string>("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [sourceFilter, setSourceFilter] = useState<string>("all");
+  const [assignedToFilter, setAssignedToFilter] = useState<string>("all");
+  const [tagFilter, setTagFilter] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [addOpen, setAddOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Lead | null>(null);
+
+  const { data: members } = trpc.organization.members.useQuery(
+    { organizationId: organizationId! },
+    { enabled: !!organizationId }
+  );
 
   const { data: leads, isLoading } = trpc.lead.list.useQuery({
     organizationId: organizationId!,
-    status: statusFilter || undefined,
-    source: sourceFilter || undefined,
+    status: statusFilter !== "all" ? statusFilter : undefined,
+    source: sourceFilter !== "all" ? sourceFilter : undefined,
+    assignedTo: assignedToFilter !== "all" ? Number(assignedToFilter) : undefined,
+    tag: tagFilter.trim() || undefined,
+    startDate: startDate ? new Date(startDate) : undefined,
+    endDate: endDate ? new Date(`${endDate}T23:59:59`) : undefined,
     search: search || undefined,
     limit: 50,
   }, { enabled: !!organizationId });
 
   const { data: stats } = trpc.lead.stats.useQuery({ organizationId: organizationId! }, { enabled: !!organizationId });
 
-  const utils = trpc.useUtils();
   const createLead = trpc.lead.create.useMutation({
     onSuccess: () => {
       utils.lead.list.invalidate();
       utils.lead.stats.invalidate();
       setAddOpen(false);
+      toast.success("Lead created");
       setNewLead({
         firstName: "",
         lastName: "",
@@ -70,6 +122,20 @@ export default function Leads() {
         estimatedValue: "",
         notes: "",
       });
+    },
+    onError: (err) => toast.error(err.message || "Failed to create lead"),
+  });
+
+  const deleteLead = trpc.lead.delete.useMutation({
+    onSuccess: () => {
+      utils.lead.list.invalidate();
+      utils.lead.stats.invalidate();
+      toast.success("Lead deleted");
+      setDeleteTarget(null);
+    },
+    onError: (err) => {
+      toast.error(err.message || "Failed to delete lead");
+      setDeleteTarget(null);
     },
   });
 
@@ -103,8 +169,8 @@ export default function Leads() {
     });
   };
 
-  // Helper mapping functions to style the UI exactly like the design
-  const getLeadTag = (lead: any) => {
+  // Derived label from real fields only (value/company/source/status) — no fabricated data.
+  const getLeadTag = (lead: Lead) => {
     if (lead.estimatedValue && lead.estimatedValue >= 5000) return "HIGH VALUE";
     if (lead.company && (lead.company.toLowerCase().includes("llc") || lead.company.toLowerCase().includes("corp") || lead.company.toLowerCase().includes("co"))) return "CORPORATE";
     if (lead.source === "ai_chat" || lead.source === "website_form") return "INQUIRY";
@@ -112,39 +178,25 @@ export default function Leads() {
     return "CONSUMER";
   };
 
-  const getAppointment = (leadId: number) => {
-    if (leadId === 3) return "Oct 24";
-    if (leadId === 4) return "Oct 22";
-    if (leadId === 10) return "Oct 25";
-    return null;
+  const getNextAppointment = (lead: Lead) => {
+    const upcoming = (lead.appointments ?? [])
+      .filter((a) => new Date(a.startTime).getTime() >= Date.now())
+      .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+    return upcoming[0] ?? null;
   };
 
-  const getAiScore = (leadId: number) => {
-    if (leadId === 3) return 94;
-    if (leadId === 4) return 88;
-    if (leadId === 1) return 62;
-    if (leadId === 10) return 91;
-    if (leadId === 6) return 12;
-    return (leadId * 17) % 40 + 55;
-  };
-
-  const formatLastActivity = (lead: any) => {
-    if (lead.id === 3) return "2 hours ago";
-    if (lead.id === 4) return "15 mins ago";
-    if (lead.id === 1) return "1 day ago";
-    if (lead.id === 10) return "3 hours ago";
-    if (lead.id === 6) return "2 days ago";
-    if (lead.lastActivityAt || lead.createdAt) {
-      const date = new Date(lead.lastActivityAt || lead.createdAt);
-      const diffMs = Date.now() - date.getTime();
-      if (diffMs < 0) return "Just now";
-      const minutes = Math.floor(diffMs / 60000);
-      if (minutes < 60) return `${minutes} mins ago`;
-      const hours = Math.floor(minutes / 60);
-      if (hours < 24) return `${hours} hours ago`;
-      return `${Math.floor(hours / 24)} days ago`;
-    }
-    return "Just now";
+  const formatLastActivity = (lead: Lead) => {
+    const source = lead.lastActivityAt || lead.createdAt;
+    if (!source) return "—";
+    const date = new Date(source);
+    const diffMs = Date.now() - date.getTime();
+    if (diffMs < 0) return "Just now";
+    const minutes = Math.floor(diffMs / 60000);
+    if (minutes < 1) return "Just now";
+    if (minutes < 60) return `${minutes} min${minutes === 1 ? "" : "s"} ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+    return `${Math.floor(hours / 24)} day${Math.floor(hours / 24) === 1 ? "" : "s"} ago`;
   };
 
   const getStatusStyleAndLabel = (status: string) => {
@@ -168,27 +220,50 @@ export default function Leads() {
     }
   };
 
-  // Client side tag filter for match
-  const filteredLeads = leads?.filter((lead) => {
-    if (!tagFilter) return true;
-    const tag = getLeadTag(lead).toLowerCase().replace(" ", "_");
-    return tag === tagFilter;
-  });
+  const resetFilters = () => {
+    setStatusFilter("all");
+    setSourceFilter("all");
+    setAssignedToFilter("all");
+    setTagFilter("");
+    setStartDate("");
+    setEndDate("");
+    setSearch("");
+  };
+
+  const handleExportCsv = () => {
+    if (!leads || leads.length === 0) return;
+    const headers = ["First Name", "Last Name", "Email", "Phone", "Company", "Status", "Source", "Priority", "Estimated Value", "Created At"];
+    const rows = leads.map((l) => [
+      l.firstName, l.lastName, l.email ?? "", l.phone ?? "", l.company ?? "", l.status, l.source ?? "", l.priority ?? "", l.estimatedValue ?? "", new Date(l.createdAt).toISOString(),
+    ]);
+    const csv = [headers, ...rows]
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `leads-export-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="p-8 space-y-8 max-w-[1400px] mx-auto bg-[#fcfcfd] min-h-full select-none">
-      
+
       {/* Header Greeting Banner */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-extrabold tracking-tight text-zinc-950">Leads Management</h1>
           <p className="text-zinc-500 text-sm mt-1 font-medium">
-            Manage, filter, and review AI-qualified leads across all channels.
+            Manage, filter, and review leads across all channels.
           </p>
         </div>
         <div className="flex items-center gap-3">
           <Button
             variant="outline"
+            onClick={handleExportCsv}
+            disabled={!leads || leads.length === 0}
             className="text-zinc-700 border-zinc-200 h-9 px-4 rounded-lg text-xs font-semibold hover:bg-zinc-50 transition-colors flex items-center gap-1.5 shadow-none"
           >
             <Download className="w-3.5 h-3.5 text-zinc-500" />
@@ -278,61 +353,40 @@ export default function Leads() {
         </div>
       </div>
 
-      {/* Metrics Cards Grid (4 columns) */}
+      {/* Metrics Cards Grid — all real, derived from lead.stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-        {/* Card 1: Total Leads */}
         <Card className="bg-white border-zinc-200/80 shadow-sm rounded-xl p-5">
-          <CardContent className="p-0 flex justify-between items-end">
-            <div className="space-y-1.5">
-              <span className="text-xs font-semibold text-zinc-500">Total Leads</span>
-              <p className="text-3xl font-extrabold text-zinc-950 tracking-tight">{stats?.total ?? 1284}</p>
-            </div>
-            <Badge className="text-emerald-700 bg-emerald-50 border border-emerald-100 hover:bg-emerald-50 text-[10px] px-2 py-0.5 rounded-full font-bold">
-              +12%
-            </Badge>
+          <CardContent className="p-0 space-y-1.5">
+            <span className="text-xs font-semibold text-zinc-500">Total Leads</span>
+            <p className="text-3xl font-extrabold text-zinc-950 tracking-tight">{stats?.total ?? 0}</p>
           </CardContent>
         </Card>
 
-        {/* Card 2: Qualified Today */}
         <Card className="bg-white border-zinc-200/80 shadow-sm rounded-xl p-5">
-          <CardContent className="p-0 flex justify-between items-end">
-            <div className="space-y-1.5">
-              <span className="text-xs font-semibold text-zinc-500">Qualified Today</span>
-              <p className="text-3xl font-extrabold text-zinc-950 tracking-tight">{stats?.qualified ?? 24}</p>
-            </div>
-            <Badge className="text-emerald-700 bg-emerald-50 border border-emerald-100 hover:bg-emerald-50 text-[10px] px-2 py-0.5 rounded-full font-bold">
-              +8%
-            </Badge>
+          <CardContent className="p-0 space-y-1.5">
+            <span className="text-xs font-semibold text-zinc-500">New Leads</span>
+            <p className="text-3xl font-extrabold text-zinc-950 tracking-tight">{stats?.new ?? 0}</p>
           </CardContent>
         </Card>
 
-        {/* Card 3: AI Score Avg */}
         <Card className="bg-white border-zinc-200/80 shadow-sm rounded-xl p-5">
-          <CardContent className="p-0 flex justify-between items-end">
-            <div className="space-y-1.5">
-              <span className="text-xs font-semibold text-zinc-500">AI Score Avg</span>
-              <p className="text-3xl font-extrabold text-indigo-600 tracking-tight">76</p>
-            </div>
-            <Badge className="text-rose-700 bg-rose-50 border border-rose-100 hover:bg-rose-50 text-[10px] px-2 py-0.5 rounded-full font-bold">
-              -2%
-            </Badge>
+          <CardContent className="p-0 space-y-1.5">
+            <span className="text-xs font-semibold text-zinc-500">Qualified</span>
+            <p className="text-3xl font-extrabold text-zinc-950 tracking-tight">{stats?.qualified ?? 0}</p>
           </CardContent>
         </Card>
 
-        {/* Card 4: Pending Calls */}
         <Card className="bg-white border-zinc-200/80 shadow-sm rounded-xl p-5">
-          <CardContent className="p-0 flex justify-between items-end">
-            <div className="space-y-1.5">
-              <span className="text-xs font-semibold text-zinc-500">Pending Calls</span>
-              <p className="text-3xl font-extrabold text-zinc-950 tracking-tight">9</p>
-            </div>
+          <CardContent className="p-0 space-y-1.5">
+            <span className="text-xs font-semibold text-zinc-500">Pipeline Value</span>
+            <p className="text-3xl font-extrabold text-zinc-950 tracking-tight">{formatCurrency(stats?.totalValue ?? 0)}</p>
           </CardContent>
         </Card>
       </div>
 
       {/* Inline Search & Filters Row */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex flex-wrap items-center gap-2.5 flex-1 min-w-0">
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
           <div className="relative max-w-sm w-full">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
             <Input
@@ -344,7 +398,7 @@ export default function Leads() {
           </div>
 
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[120px] bg-white border-zinc-200 text-xs font-semibold text-zinc-700 h-9 rounded-lg shadow-none">
+            <SelectTrigger className="w-[130px] bg-white border-zinc-200 text-xs font-semibold text-zinc-700 h-9 rounded-lg shadow-none">
               <SelectValue placeholder="Status: All" />
             </SelectTrigger>
             <SelectContent className="bg-white border-zinc-200">
@@ -360,7 +414,7 @@ export default function Leads() {
           </Select>
 
           <Select value={sourceFilter} onValueChange={setSourceFilter}>
-            <SelectTrigger className="w-[120px] bg-white border-zinc-200 text-xs font-semibold text-zinc-700 h-9 rounded-lg shadow-none">
+            <SelectTrigger className="w-[130px] bg-white border-zinc-200 text-xs font-semibold text-zinc-700 h-9 rounded-lg shadow-none">
               <SelectValue placeholder="Source: All" />
             </SelectTrigger>
             <SelectContent className="bg-white border-zinc-200">
@@ -374,26 +428,32 @@ export default function Leads() {
             </SelectContent>
           </Select>
 
-          <Select value={tagFilter} onValueChange={setTagFilter}>
-            <SelectTrigger className="w-[110px] bg-white border-zinc-200 text-xs font-semibold text-zinc-700 h-9 rounded-lg shadow-none">
-              <SelectValue placeholder="Tags: Any" />
+          <Select value={assignedToFilter} onValueChange={setAssignedToFilter}>
+            <SelectTrigger className="w-[150px] bg-white border-zinc-200 text-xs font-semibold text-zinc-700 h-9 rounded-lg shadow-none">
+              <SelectValue placeholder="Assigned: Anyone" />
             </SelectTrigger>
             <SelectContent className="bg-white border-zinc-200">
-              <SelectItem value="all">Tags: Any</SelectItem>
-              <SelectItem value="high_value">High Value</SelectItem>
-              <SelectItem value="corporate">Corporate</SelectItem>
-              <SelectItem value="inquiry">Inquiry</SelectItem>
-              <SelectItem value="out_of_area">Out of Area</SelectItem>
-              <SelectItem value="consumer">Consumer</SelectItem>
+              <SelectItem value="all">Assigned: Anyone</SelectItem>
+              {members?.map((m) => (
+                <SelectItem key={m.user!.id} value={String(m.user!.id)}>{m.user?.name || m.user?.email}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
-        </div>
 
-        <div className="flex items-center gap-3 shrink-0 text-[11px] font-semibold">
-          <span className="text-zinc-400">Updated: Just now</span>
-          <button 
-            onClick={() => { setStatusFilter(""); setSourceFilter(""); setTagFilter(""); setSearch(""); }}
-            className="text-indigo-650 hover:text-indigo-700 hover:underline"
+          <Input
+            placeholder="Filter by tag..."
+            value={tagFilter}
+            onChange={(e) => setTagFilter(e.target.value)}
+            className="w-[130px] bg-white border-zinc-200 text-xs h-9 rounded-lg shadow-none"
+          />
+
+          <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-[140px] bg-white border-zinc-200 text-xs h-9 rounded-lg shadow-none" />
+          <span className="text-zinc-400 text-xs">to</span>
+          <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-[140px] bg-white border-zinc-200 text-xs h-9 rounded-lg shadow-none" />
+
+          <button
+            onClick={resetFilters}
+            className="text-indigo-650 hover:text-indigo-700 hover:underline text-[11px] font-semibold"
           >
             Reset Filters
           </button>
@@ -409,8 +469,8 @@ export default function Leads() {
             <div className="col-span-2">Phone</div>
             <div className="col-span-1">Status</div>
             <div className="col-span-2">Last Activity</div>
-            <div className="col-span-1.5">Appointment</div>
-            <div className="col-span-1.5">AI Score</div>
+            <div className="col-span-1.5">Next Appt.</div>
+            <div className="col-span-1.5">Est. Value</div>
             <div className="col-span-1 text-right pr-2">Actions</div>
           </div>
 
@@ -434,22 +494,20 @@ export default function Leads() {
                   <div className="col-span-1"><Skeleton className="h-4 w-12 bg-zinc-100" /></div>
                 </div>
               ))
-            ) : !filteredLeads || filteredLeads.length === 0 ? (
+            ) : !leads || leads.length === 0 ? (
               <div className="px-6 py-12 text-center text-xs text-zinc-450 font-semibold bg-white select-none">
                 No leads found matching your criteria.
               </div>
             ) : (
-              filteredLeads.map((lead) => {
+              leads.map((lead) => {
                 const initials = `${lead.firstName[0] || ""}${lead.lastName[0] || ""}`;
-                const appointment = getAppointment(lead.id);
-                const score = getAiScore(lead.id);
-                const isLowScore = score < 40;
+                const nextAppt = getNextAppointment(lead);
                 const statusInfo = getStatusStyleAndLabel(lead.status);
 
                 return (
                   <div
                     key={lead.id}
-                    className="grid grid-cols-12 gap-2 px-6 py-4 items-center hover:bg-zinc-50/50 cursor-pointer transition-colors text-xs text-zinc-950 font-semibold"
+                    className="grid grid-cols-12 gap-2 px-6 py-4 items-center hover:bg-zinc-50/50 transition-colors text-xs text-zinc-950 font-semibold"
                   >
                     {/* Name column */}
                     <div className="col-span-3 flex items-center gap-3 min-w-0">
@@ -457,9 +515,9 @@ export default function Leads() {
                         {initials}
                       </div>
                       <div className="min-w-0">
-                        <span 
+                        <span
                           onClick={() => navigate(`/leads/${lead.id}`)}
-                          className="font-extrabold text-zinc-950 hover:text-indigo-600 transition-colors block truncate"
+                          className="font-extrabold text-zinc-950 hover:text-indigo-600 transition-colors block truncate cursor-pointer"
                         >
                           {lead.firstName} {lead.lastName}
                         </span>
@@ -487,56 +545,56 @@ export default function Leads() {
                       <span>{formatLastActivity(lead)}</span>
                     </div>
 
-                    {/* Appointment column */}
+                    {/* Next Appointment column */}
                     <div className="col-span-1.5 select-none">
-                      {appointment ? (
+                      {nextAppt ? (
                         <div className="flex items-center gap-1.5 text-indigo-600 font-bold">
                           <Calendar className="w-3.5 h-3.5 shrink-0" />
-                          <span>{appointment}</span>
+                          <span>{new Date(nextAppt.startTime).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
                         </div>
                       ) : (
                         <span className="text-zinc-350 font-normal pl-5">—</span>
                       )}
                     </div>
 
-                    {/* AI Score column */}
-                    <div className="col-span-1.5 flex items-center gap-2 select-none">
-                      <div className="w-12 h-1.5 bg-zinc-100 rounded-full overflow-hidden shrink-0">
-                        <div 
-                          className={`h-full rounded-full ${isLowScore ? 'bg-red-500' : 'bg-zinc-300'}`} 
-                          style={{ width: `${score}%` }} 
-                        />
-                      </div>
-                      <span className={`font-extrabold ${isLowScore ? 'text-red-500' : 'text-zinc-950'}`}>
-                        {score}
-                      </span>
+                    {/* Estimated Value column */}
+                    <div className="col-span-1.5 text-zinc-700 font-bold select-none">
+                      {formatCurrency(lead.estimatedValue)}
                     </div>
 
                     {/* Actions column */}
                     <div className="col-span-1 flex items-center justify-end gap-3 text-zinc-400">
-                      <button 
+                      <button
                         onClick={() => {
                           if (lead.phone) {
                             window.open(`tel:${lead.phone}`);
                           } else {
-                            alert("This lead does not have a phone number saved.");
+                            toast.error("This lead does not have a phone number saved.");
                           }
-                        }} 
+                        }}
                         className="hover:text-zinc-900 transition-colors p-0.5"
                       >
                         <Phone className="w-3.5 h-3.5" />
                       </button>
-                      <button 
-                        onClick={() => navigate(`/leads/${lead.id}`)} 
+                      <button
+                        onClick={() => navigate(`/leads/${lead.id}`)}
                         className="hover:text-zinc-900 transition-colors p-0.5"
                       >
                         <ArrowUpRight className="w-3.5 h-3.5" />
                       </button>
-                      <button 
-                        className="hover:text-zinc-900 transition-colors p-0.5"
-                      >
-                        <MoreVertical className="w-3.5 h-3.5" />
-                      </button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button className="hover:text-zinc-900 transition-colors p-0.5">
+                            <MoreVertical className="w-3.5 h-3.5" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => navigate(`/leads/${lead.id}`)}>View Details</DropdownMenuItem>
+                          <DropdownMenuItem variant="destructive" onClick={() => setDeleteTarget(lead)}>
+                            <Trash2 className="w-3.5 h-3.5 mr-2" /> Delete Lead
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
 
                   </div>
@@ -547,7 +605,7 @@ export default function Leads() {
 
           {/* Footer Controls */}
           <div className="p-4 border-t border-zinc-100 flex items-center justify-between text-xs font-semibold text-zinc-400 select-none">
-            <span>Showing {filteredLeads?.length ?? 0} of {stats?.total ?? 1284} leads</span>
+            <span>Showing {leads?.length ?? 0} of {stats?.total ?? 0} leads</span>
             <div className="flex gap-1.5">
               <Button variant="outline" className="h-8 px-3 rounded-lg text-zinc-700 border-zinc-200 hover:bg-zinc-50 font-bold shadow-none" disabled>
                 Previous
@@ -560,6 +618,26 @@ export default function Leads() {
 
         </div>
       </Card>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this lead?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget && `${deleteTarget.firstName} ${deleteTarget.lastName} will be permanently removed. This cannot be undone.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteTarget && deleteLead.mutate({ id: deleteTarget.id })}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
     </div>
   );

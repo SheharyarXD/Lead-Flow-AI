@@ -8,7 +8,7 @@ import {
   updateCall,
   getCallStats,
 } from "./queries/calls";
-import { requireOrganizationMembership, requireOrganizationRole } from "./queries/organizations";
+import { requireOnboardedOrganizationMembership as requireOrganizationMembership, requireOnboardedOrganizationRole as requireOrganizationRole } from "./queries/organizations";
 
 export const callRouter = createRouter({
   list: authedQuery
@@ -83,7 +83,7 @@ export const callRouter = createRouter({
       const call = await findCallById(id);
       if (!call) throw new Error("Call not found");
       await requireOrganizationRole(ctx.user.id, call.organizationId, ["owner", "admin", "manager", "member"]);
-      return updateCall(id, data as Record<string, unknown>);
+      return updateCall(id, call.organizationId, data as Record<string, unknown>);
     }),
 
   stats: authedQuery

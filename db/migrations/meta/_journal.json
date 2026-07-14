@@ -8,6 +8,20 @@
       "when": 1783870960294,
       "tag": "0000_acoustic_epoch",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1784039142782,
+      "tag": "0001_magenta_arachne",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1784059216438,
+      "tag": "0002_young_lifeguard",
+      "breakpoints": true
     }
   ]
 }

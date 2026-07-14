@@ -105,13 +105,16 @@ export async function createLead(data: InferInsertModel<typeof leads>) {
 
 // We use any for the update data to allow flexible partial updates from routers
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function updateLead(id: number, data: any) {
-  await getDb().update(leads).set({ ...data, updatedAt: new Date() }).where(eq(leads.id, id));
+export async function updateLead(id: number, organizationId: number, data: any) {
+  await getDb()
+    .update(leads)
+    .set({ ...data, updatedAt: new Date() })
+    .where(and(eq(leads.id, id), eq(leads.organizationId, organizationId)));
   return findLeadById(id);
 }
 
-export async function deleteLead(id: number) {
-  await getDb().delete(leads).where(eq(leads.id, id));
+export async function deleteLead(id: number, organizationId: number) {
+  await getDb().delete(leads).where(and(eq(leads.id, id), eq(leads.organizationId, organizationId)));
 }
 
 export async function getLeadStats(organizationId: number) {

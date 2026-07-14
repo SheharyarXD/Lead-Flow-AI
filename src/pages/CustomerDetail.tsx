@@ -1,4 +1,5 @@
 import { useParams, useNavigate } from "react-router";
+import { toast } from "sonner";
 import { trpc } from "@/providers/trpc";
 import { useOrganization } from "@/hooks/useOrganization";
 import { Card } from "@/components/ui/card";
@@ -12,6 +13,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useState, useEffect } from "react";
 import {
   ArrowLeft,
@@ -22,6 +39,8 @@ import {
   MoreHorizontal,
   User,
   ExternalLink,
+  Trash2,
+  Activity as ActivityIcon,
 } from "lucide-react";
 
 export default function CustomerDetail() {
@@ -33,29 +52,46 @@ export default function CustomerDetail() {
   const utils = trpc.useUtils();
   const { organizationId } = useOrganization();
 
+  const { data: activityLog } = trpc.activity.list.useQuery(
+    { organizationId: organizationId!, entityType: "customer", entityId: customerId },
+    { enabled: !!organizationId }
+  );
+
   const createConversation = trpc.conversation.create.useMutation({
     onSuccess: (newConv) => {
       if (newConv) {
         navigate(`/conversations/${newConv.id}`);
       }
     },
+    onError: (err) => toast.error(err.message || "Failed to start conversation"),
   });
 
   const updateMutation = trpc.customer.update.useMutation({
     onSuccess: () => {
       utils.customer.getById.invalidate({ id: customerId });
     },
+    onError: (err) => toast.error(err.message || "Failed to update customer"),
+  });
+
+  const deleteMutation = trpc.customer.delete.useMutation({
+    onSuccess: () => {
+      toast.success("Customer deleted");
+      navigate("/leads");
+    },
+    onError: (err) => toast.error(err.message || "Failed to delete customer"),
   });
 
   const updateTaskMutation = trpc.task.update.useMutation({
     onSuccess: () => {
       utils.customer.getById.invalidate({ id: customerId });
     },
+    onError: (err) => toast.error(err.message || "Failed to update task"),
   });
 
   const [notesText, setNotesText] = useState("");
   const [tagsList, setTagsList] = useState<string[]>([]);
   const [statusVal, setStatusVal] = useState("");
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   useEffect(() => {
     if (customer) {
@@ -135,7 +171,7 @@ export default function CustomerDetail() {
   }
 
   if (customer.calls) {
-    customer.calls.forEach((call: any) => {
+    customer.calls.forEach((call) => {
       timelineEvents.push({
         id: `call-${call.id}`,
         type: "call",
@@ -148,7 +184,7 @@ export default function CustomerDetail() {
   }
 
   if (customer.conversations) {
-    customer.conversations.forEach((conv: any) => {
+    customer.conversations.forEach((conv) => {
       timelineEvents.push({
         id: `conv-${conv.id}`,
         type: "conversation",
@@ -161,7 +197,7 @@ export default function CustomerDetail() {
   }
 
   if (customer.tasks) {
-    customer.tasks.forEach((task: any) => {
+    customer.tasks.forEach((task) => {
       timelineEvents.push({
         id: `task-${task.id}`,
         type: "task",
@@ -169,6 +205,19 @@ export default function CustomerDetail() {
         description: task.description || `Task priority: ${task.priority}. Status: ${task.status}.`,
         date: new Date(task.createdAt || customer.createdAt),
         badge: task.status === "completed" ? "Completed" : "Pending",
+      });
+    });
+  }
+
+  if (activityLog) {
+    activityLog.forEach((entry) => {
+      timelineEvents.push({
+        id: `activity-${entry.id}`,
+        type: "activity",
+        title: entry.action,
+        description: entry.description || "",
+        date: new Date(entry.createdAt),
+        badge: entry.actorType,
       });
     });
   }
@@ -212,7 +261,7 @@ export default function CustomerDetail() {
     });
   };
 
-  const toggleTaskStatus = (task: any) => {
+  const toggleTaskStatus = (task: { id: number; status: string }) => {
     const newStatus = task.status === "completed" ? "pending" : "completed";
     updateTaskMutation.mutate({
       id: task.id,
@@ -285,9 +334,18 @@ export default function CustomerDetail() {
               Send SMS
             </Button>
             
-            <button className="text-zinc-400 hover:text-zinc-900 transition-colors p-2.5 border border-zinc-200 rounded-lg bg-white shadow-sm hover:bg-zinc-50">
-              <MoreHorizontal className="w-4 h-4" />
-            </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="text-zinc-400 hover:text-zinc-900 transition-colors p-2.5 border border-zinc-200 rounded-lg bg-white shadow-sm hover:bg-zinc-50">
+                  <MoreHorizontal className="w-4 h-4" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem variant="destructive" onClick={() => setDeleteOpen(true)}>
+                  <Trash2 className="w-3.5 h-3.5 mr-2" /> Delete Customer
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </Card>
@@ -398,6 +456,8 @@ export default function CustomerDetail() {
                         <MessageSquare className="w-3.5 h-3.5" />
                       ) : event.type === "task" ? (
                         <CheckSquare className="w-3.5 h-3.5" />
+                      ) : event.type === "activity" ? (
+                        <ActivityIcon className="w-3.5 h-3.5" />
                       ) : (
                         <User className="w-3.5 h-3.5" />
                       )}
@@ -448,7 +508,7 @@ export default function CustomerDetail() {
             </div>
             
             <div className="space-y-3">
-              {customer.leads?.map((lead: any) => (
+              {customer.leads?.map((lead) => (
                 <div key={lead.id} className="border border-zinc-100 rounded-xl p-3.5 hover:bg-zinc-50/50 transition-colors flex justify-between items-center gap-3">
                   <div className="min-w-0 flex-1">
                     <span onClick={() => navigate(`/leads/${lead.id}`)} className="text-xs font-bold text-zinc-950 block truncate hover:text-indigo-600 cursor-pointer flex items-center gap-1">
@@ -478,7 +538,7 @@ export default function CustomerDetail() {
             </div>
 
             <div className="space-y-3">
-              {customer.appointments?.map((appt: any) => {
+              {customer.appointments?.map((appt) => {
                 const date = new Date(appt.startTime);
                 const timeStr = date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
 
@@ -506,12 +566,12 @@ export default function CustomerDetail() {
             <div className="flex items-center justify-between pb-3 mb-4 border-b border-zinc-100">
               <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider block">Pending Tasks</span>
               <Badge className="bg-indigo-50 text-indigo-700 hover:bg-indigo-50 border border-indigo-100 font-bold text-[10px] rounded px-1.5">
-                {customer.tasks?.filter((t: any) => t.status !== "completed").length ?? 0}
+                {customer.tasks?.filter((t) => t.status !== "completed").length ?? 0}
               </Badge>
             </div>
 
             <div className="space-y-3">
-              {customer.tasks?.map((task: any) => (
+              {customer.tasks?.map((task) => (
                 <div key={task.id} className="flex items-start gap-3 border border-zinc-100 rounded-xl p-3.5 hover:bg-zinc-50/50 transition-colors">
                   <input
                     type="checkbox"
@@ -538,6 +598,23 @@ export default function CustomerDetail() {
         </div>
 
       </div>
+
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this customer?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {customer.firstName} {customer.lastName} and their linked records will be permanently removed. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => deleteMutation.mutate({ id: customerId })} className="bg-red-600 hover:bg-red-700">
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
     </div>
   );

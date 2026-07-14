@@ -3,6 +3,7 @@ import {
   users,
   organizations,
   organizationMembers,
+  organizationInvitations,
   customers,
   leads,
   conversations,
@@ -27,6 +28,7 @@ export const usersRelations = relations(users, ({ many }) => ({
 
 export const organizationsRelations = relations(organizations, ({ many, one }) => ({
   members: many(organizationMembers),
+  invitations: many(organizationInvitations),
   customers: many(customers),
   leads: many(leads),
   conversations: many(conversations),
@@ -42,6 +44,11 @@ export const organizationsRelations = relations(organizations, ({ many, one }) =
 export const organizationMembersRelations = relations(organizationMembers, ({ one }) => ({
   organization: one(organizations, { fields: [organizationMembers.organizationId], references: [organizations.id] }),
   user: one(users, { fields: [organizationMembers.userId], references: [users.id] }),
+}));
+
+export const organizationInvitationsRelations = relations(organizationInvitations, ({ one }) => ({
+  organization: one(organizations, { fields: [organizationInvitations.organizationId], references: [organizations.id] }),
+  invitedByUser: one(users, { fields: [organizationInvitations.invitedBy], references: [users.id] }),
 }));
 
 export const customersRelations = relations(customers, ({ many, one }) => ({

@@ -74,13 +74,16 @@ export async function createCustomer(data: InferInsertModel<typeof customers>) {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function updateCustomer(id: number, data: any) {
-  await getDb().update(customers).set({ ...data, updatedAt: new Date() }).where(eq(customers.id, id));
+export async function updateCustomer(id: number, organizationId: number, data: any) {
+  await getDb()
+    .update(customers)
+    .set({ ...data, updatedAt: new Date() })
+    .where(and(eq(customers.id, id), eq(customers.organizationId, organizationId)));
   return findCustomerById(id);
 }
 
-export async function deleteCustomer(id: number) {
-  await getDb().delete(customers).where(eq(customers.id, id));
+export async function deleteCustomer(id: number, organizationId: number) {
+  await getDb().delete(customers).where(and(eq(customers.id, id), eq(customers.organizationId, organizationId)));
 }
 
 export async function countCustomersByOrganization(organizationId: number) {

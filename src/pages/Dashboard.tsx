@@ -1,4 +1,5 @@
 import { trpc } from "@/providers/trpc";
+import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +18,6 @@ import {
   Mail,
   Zap,
   CheckCircle2,
-  MoreVertical,
   ChevronRight,
 } from "lucide-react";
 
@@ -52,6 +52,16 @@ export default function Dashboard() {
   const { data: stats, isLoading: statsLoading } = trpc.dashboard.stats.useQuery({ organizationId: organizationId! }, { enabled: !!organizationId });
   const { data: recentActivity, isLoading: activityLoading } = trpc.dashboard.activity.useQuery({ organizationId: organizationId!, limit: 4 }, { enabled: !!organizationId });
   const { data: upcomingTasks, isLoading: tasksLoading } = trpc.dashboard.upcomingTasks.useQuery({ organizationId: organizationId!, limit: 3 }, { enabled: !!organizationId });
+  const utils = trpc.useUtils();
+
+  const resolveTask = trpc.task.update.useMutation({
+    onSuccess: () => {
+      utils.dashboard.upcomingTasks.invalidate({ organizationId: organizationId!, limit: 3 });
+      utils.dashboard.stats.invalidate({ organizationId: organizationId! });
+      toast.success("Task marked complete");
+    },
+    onError: (err) => toast.error(err.message || "Failed to update task"),
+  });
 
   const greeting = () => {
     const hour = new Date().getHours();
@@ -80,7 +90,6 @@ export default function Dashboard() {
   // Compute Integration Status based on Organization Database Record
   const org = stats?.organization;
   const hasPhone = !!org?.phone;
-  const hasTimezone = !!org?.timezone;
   const hasEmail = !!org?.email;
   const aiEnabled = !!org?.aiEnabled;
 
@@ -104,46 +113,19 @@ export default function Dashboard() {
   };
   const trialProgress = getTrialDays();
 
-  // Generate Dynamic AI Insight based on Real DB Stats
-  const getAIInsight = () => {
-    const rate = stats?.conversionRate ?? 0;
-    const tasksCount = stats?.pendingTasks ?? 0;
-    const callsCount = stats?.completedCalls ?? 0;
-
-    if (tasksCount > 5) {
-      return "“High volume of unresolved flags/tasks detected. Consider allocating resources to follow-ups to maintain patient satisfaction.”";
-    }
-    if (rate > 20) {
-      return `“Outstanding performance! Your current conversion rate is ${rate}%, exceeding the weekly target.”`;
-    }
-    if (callsCount > 10) {
-      return "“Frequent call patterns detected. Ensure your calendar scheduling availability is up-to-date to capture inbound leads.”";
-    }
-    return "“Peak conversation time detected between 6:00 PM and 8:00 PM. Consider increasing AI response speed for these hours.”";
-  };
-
-
-
   return (
     <div className="p-8 space-y-8 max-w-[1400px] mx-auto bg-[#fcfcfd] min-h-full select-none">
       {/* Header Greeting Banner */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-extrabold tracking-tight text-zinc-950">
-            {greeting()}, {user?.name?.split(" ")[0] || "Alex"}
+            {greeting()}, {user?.name?.split(" ")[0] || "there"}
           </h1>
           <p className="text-zinc-500 text-sm mt-1 font-medium">
             Here's what's happening with your AI agents today.
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <Button
-            variant="outline"
-            onClick={() => navigate("/calls")}
-            className="text-zinc-700 border-zinc-200 h-9 px-4 rounded-lg text-xs font-semibold hover:bg-zinc-50 transition-colors"
-          >
-            Audit Logs
-          </Button>
           <Button
             onClick={() => navigate("/calendar")}
             className="bg-indigo-600 hover:bg-indigo-700 text-white h-9 px-4 rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-[0_2px_8px_rgba(79,70,229,0.25)] transition-all"
@@ -347,10 +329,8 @@ export default function Dashboard() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={async () => {
-                            // Link resolver simulation
-                            navigate("/tasks");
-                          }}
+                          disabled={resolveTask.isPending}
+                          onClick={() => resolveTask.mutate({ id: task.id, status: "completed" })}
                           className="h-8 text-xs font-bold text-zinc-700 border-zinc-200 hover:bg-zinc-50 rounded-lg"
                         >
                           Resolve
@@ -370,9 +350,6 @@ export default function Dashboard() {
                 <CardTitle className="text-lg font-bold text-zinc-950">Recent Activity</CardTitle>
                 <p className="text-xs text-zinc-400 mt-1 font-medium">Live feed of AI and human interactions.</p>
               </div>
-              <button className="text-zinc-400 hover:text-zinc-950 transition-colors p-1 rounded-lg">
-                <MoreVertical className="w-5 h-5" />
-              </button>
             </CardHeader>
             <CardContent className="p-0">
               {activityLoading ? (
@@ -410,13 +387,6 @@ export default function Dashboard() {
                   })}
                 </div>
               )}
-              <Button
-                variant="outline"
-                onClick={() => navigate("/calls")}
-                className="w-full py-2.5 text-sm font-semibold text-zinc-700 border-zinc-200 hover:bg-zinc-50 rounded-xl mt-2 transition-colors"
-              >
-                View All Activity
-              </Button>
             </CardContent>
           </Card>
         </div>
@@ -427,14 +397,13 @@ export default function Dashboard() {
           <Card className="bg-white border-zinc-200/80 shadow-sm rounded-xl p-5">
             <CardHeader className="p-0 pb-4">
               <CardTitle className="text-base font-bold text-zinc-950">System Status</CardTitle>
-              <p className="text-xs text-zinc-400 mt-1 font-medium">Core integrations and operational health.</p>
+              <p className="text-xs text-zinc-400 mt-1 font-medium">Core configuration and operational health.</p>
             </CardHeader>
             <CardContent className="p-0 space-y-3.5">
               {[
-                { label: "Twilio SMS/Voice", icon: Smartphone, status: hasPhone ? "Verified" : "Pending" },
-                { label: "Google Calendar", icon: Calendar, status: hasTimezone ? "Verified" : "Pending" },
-                { label: "Email Domain (SPF/DKIM)", icon: Mail, status: hasEmail ? "Verified" : "Pending" },
-                { label: "AI Engine (Claude 3.5)", icon: Zap, status: aiEnabled ? "Verified" : "Pending" },
+                { label: "SMS Number", icon: Smartphone, active: hasPhone, onLabel: "Configured", offLabel: "Not Set" },
+                { label: "Email Routing", icon: Mail, active: hasEmail, onLabel: "Configured", offLabel: "Not Set" },
+                { label: "AI Auto-Reply", icon: Zap, active: aiEnabled, onLabel: "Enabled", offLabel: "Disabled" },
               ].map((item, i) => (
                 <div key={i} className="flex items-center justify-between p-1">
                   <div className="flex items-center gap-3">
@@ -443,11 +412,11 @@ export default function Dashboard() {
                     </div>
                     <span className="text-xs font-semibold text-zinc-700">{item.label}</span>
                   </div>
-                  {item.status === "Verified" ? (
-                    <span className="text-xs font-extrabold text-zinc-950">Verified</span>
+                  {item.active ? (
+                    <span className="text-xs font-extrabold text-zinc-950">{item.onLabel}</span>
                   ) : (
                     <Badge className="text-zinc-600 bg-zinc-100 border border-zinc-200 hover:bg-zinc-200 text-[10px] px-2 py-0.5 rounded-full font-bold">
-                      Pending
+                      {item.offLabel}
                     </Badge>
                   )}
                 </div>
@@ -490,32 +459,14 @@ export default function Dashboard() {
                   ) : (
                     <span className="text-3xl font-extrabold tracking-tight">{stats?.conversionRate ?? 0}%</span>
                   )}
-                  <Badge className="text-white bg-indigo-500/40 border border-indigo-400/30 hover:bg-indigo-500/40 text-[10px] px-2 py-0.5 rounded-full font-bold inline-flex items-center gap-0.5">
-                    <TrendingUp className="w-3 h-3" />
-                    +3.2%
-                  </Badge>
                 </div>
               </div>
               <p className="text-indigo-100/90 text-xs leading-relaxed font-medium">
-                Your AI agent {org?.name ? `at "${org.name}"` : ""} is outperforming the human average by 12% this week.
+                {stats?.totalLeads ?? 0} leads generated and {stats?.completedCalls ?? 0} calls completed so far.
               </p>
               <Button onClick={() => navigate("/settings")} className="w-full bg-white hover:bg-zinc-50 text-indigo-600 font-bold text-sm h-10 rounded-xl transition-all shadow-sm">
                 Optimize Script
               </Button>
-            </CardContent>
-          </Card>
-
-          {/* AI Insight Quotes */}
-          <Card className="bg-white border-zinc-200/80 shadow-sm rounded-xl p-5">
-            <CardContent className="p-0 space-y-2">
-              <p className="text-[10px] font-bold text-zinc-400 tracking-wider">AI INSIGHT</p>
-              {statsLoading ? (
-                <Skeleton className="h-8 w-full" />
-              ) : (
-                <p className="text-xs text-zinc-600 leading-relaxed font-semibold italic">
-                  {getAIInsight()}
-                </p>
-              )}
             </CardContent>
           </Card>
         </div>

@@ -9,7 +9,8 @@ import {
   deleteAppointment,
   getAppointmentStats,
 } from "./queries/appointments";
-import { requireOrganizationMembership, requireOrganizationRole } from "./queries/organizations";
+import { requireOnboardedOrganizationMembership as requireOrganizationMembership, requireOnboardedOrganizationRole as requireOrganizationRole } from "./queries/organizations";
+import { createActivity } from "./queries/activities";
 
 export const appointmentRouter = createRouter({
   list: authedQuery
@@ -58,7 +59,7 @@ export const appointmentRouter = createRouter({
     )
     .mutation(async ({ input, ctx }) => {
       await requireOrganizationRole(ctx.user.id, input.organizationId, ["owner", "admin", "manager", "member"]);
-      return createAppointment({
+      const appt = await createAppointment({
         organizationId: input.organizationId,
         customerId: input.customerId,
         leadId: input.leadId,
@@ -71,6 +72,18 @@ export const appointmentRouter = createRouter({
         assignedTo: input.assignedTo,
         notes: input.notes,
       });
+      if (appt) {
+        await createActivity({
+          organizationId: input.organizationId,
+          actorId: ctx.user.id,
+          actorType: "user",
+          entityType: "appointment",
+          entityId: appt.id,
+          action: "Appointment scheduled",
+          description: `"${appt.title}" scheduled for ${new Date(appt.startTime).toLocaleString()}`,
+        });
+      }
+      return appt;
     }),
 
   update: authedQuery
@@ -93,7 +106,18 @@ export const appointmentRouter = createRouter({
       const appt = await findAppointmentById(id);
       if (!appt) throw new Error("Appointment not found");
       await requireOrganizationRole(ctx.user.id, appt.organizationId, ["owner", "admin", "manager", "member"]);
-      return updateAppointment(id, data as Record<string, unknown>);
+      const updated = await updateAppointment(id, appt.organizationId, data as Record<string, unknown>);
+      const isReschedule = data.startTime !== undefined || data.endTime !== undefined;
+      await createActivity({
+        organizationId: appt.organizationId,
+        actorId: ctx.user.id,
+        actorType: "user",
+        entityType: "appointment",
+        entityId: id,
+        action: isReschedule ? "Appointment rescheduled" : "Appointment updated",
+        description: `"${appt.title}" ${isReschedule ? "rescheduled" : "updated"}`,
+      });
+      return updated;
     }),
 
   delete: authedQuery
@@ -102,7 +126,16 @@ export const appointmentRouter = createRouter({
       const appt = await findAppointmentById(input.id);
       if (!appt) return { success: true };
       await requireOrganizationRole(ctx.user.id, appt.organizationId, ["owner", "admin", "manager"]);
-      await deleteAppointment(input.id);
+      await deleteAppointment(input.id, appt.organizationId);
+      await createActivity({
+        organizationId: appt.organizationId,
+        actorId: ctx.user.id,
+        actorType: "user",
+        entityType: "appointment",
+        entityId: input.id,
+        action: "Appointment cancelled",
+        description: `"${appt.title}" cancelled`,
+      });
       return { success: true };
     }),
 

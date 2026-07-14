@@ -10,7 +10,7 @@ import {
   getLeadStats,
   countLeadsByOrganization,
 } from "./queries/leads";
-import { requireOrganizationMembership, requireOrganizationRole } from "./queries/organizations";
+import { requireOnboardedOrganizationMembership as requireOrganizationMembership, requireOnboardedOrganizationRole as requireOrganizationRole } from "./queries/organizations";
 import { createTask } from "./queries/tasks";
 import { createActivity } from "./queries/activities";
 
@@ -22,6 +22,10 @@ export const leadRouter = createRouter({
         status: z.string().optional(),
         source: z.string().optional(),
         priority: z.string().optional(),
+        assignedTo: z.number().optional(),
+        tag: z.string().optional(),
+        startDate: z.coerce.date().optional(),
+        endDate: z.coerce.date().optional(),
         search: z.string().optional(),
         limit: z.number().optional(),
         offset: z.number().optional(),
@@ -125,7 +129,17 @@ export const leadRouter = createRouter({
       const lead = await findLeadById(id);
       if (!lead) return null;
       await requireOrganizationRole(ctx.user.id, lead.organizationId, ["owner", "admin", "manager", "member"]);
-      return updateLead(id, data as Record<string, unknown>);
+      const updated = await updateLead(id, lead.organizationId, data as Record<string, unknown>);
+      await createActivity({
+        organizationId: lead.organizationId,
+        actorId: ctx.user.id,
+        actorType: "user",
+        entityType: "lead",
+        entityId: id,
+        action: "Lead updated",
+        description: `Lead ${lead.firstName} ${lead.lastName} updated`,
+      });
+      return updated;
     }),
 
   delete: authedQuery
@@ -134,7 +148,16 @@ export const leadRouter = createRouter({
       const lead = await findLeadById(input.id);
       if (!lead) return { success: true };
       await requireOrganizationRole(ctx.user.id, lead.organizationId, ["owner", "admin", "manager"]);
-      await deleteLead(input.id);
+      await deleteLead(input.id, lead.organizationId);
+      await createActivity({
+        organizationId: lead.organizationId,
+        actorId: ctx.user.id,
+        actorType: "user",
+        entityType: "lead",
+        entityId: input.id,
+        action: "Lead deleted",
+        description: `Lead ${lead.firstName} ${lead.lastName} deleted`,
+      });
       return { success: true };
     }),
 

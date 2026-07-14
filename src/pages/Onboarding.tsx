@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { trpc } from "@/providers/trpc";
 import { useOrganization } from "@/hooks/useOrganization";
@@ -45,13 +45,54 @@ export default function Onboarding() {
   const [serviceInput, setServiceInput] = useState("");
   const [services, setServices] = useState<string[]>([]);
 
-  const [faqs, setFaqs] = useState<Array<{ question: string; answer: string }>>([]);
   const [newQuestion, setNewQuestion] = useState("");
   const [newAnswer, setNewAnswer] = useState("");
 
   const [aiInstructions, setAiInstructions] = useState(
     "You are a helpful and polite virtual receptionist. Answer customers' questions accurately using the knowledge base, gather their name and phone number if they wish to book an appointment, and offer to schedule a slot during business hours."
   );
+
+  // Autosave: rehydrate any progress saved on a previous visit, so closing the
+  // tab mid-onboarding never loses work.
+  const hydratedRef = useRef(false);
+  const { data: existingOrg } = trpc.organization.getById.useQuery(
+    { id: organizationId! },
+    { enabled: !!organizationId }
+  );
+  const { data: faqEntries, refetch: refetchFaqs } = trpc.knowledgeBase.list.useQuery(
+    { organizationId: organizationId!, type: "faq" },
+    { enabled: !!organizationId }
+  );
+  const faqs = (faqEntries ?? []).map((f) => ({ id: f.id, question: f.title, answer: f.content }));
+
+  useEffect(() => {
+    if (hydratedRef.current || !existingOrg) return;
+    hydratedRef.current = true;
+    if (existingOrg.name) setBusinessName(existingOrg.name);
+    if (existingOrg.industry) setIndustry(existingOrg.industry);
+    if (existingOrg.phone) setPhone(existingOrg.phone);
+    if (existingOrg.businessHours) setBusinessHours(existingOrg.businessHours);
+    if (existingOrg.services?.length) setServices(existingOrg.services);
+    if (existingOrg.aiInstructions) setAiInstructions(existingOrg.aiInstructions);
+  }, [existingOrg]);
+
+  const saveProgress = trpc.organization.saveProgress.useMutation();
+
+  const persistProgress = () => {
+    if (!organizationId) return;
+    saveProgress.mutate({
+      organizationId,
+      name: businessName || undefined,
+      industry: industry || undefined,
+      phone: phone || undefined,
+      businessHours,
+      services,
+      aiInstructions,
+    });
+  };
+
+  const createFaq = trpc.knowledgeBase.create.useMutation({ onSuccess: () => refetchFaqs() });
+  const deleteFaq = trpc.knowledgeBase.delete.useMutation({ onSuccess: () => refetchFaqs() });
 
   const completeOnboarding = trpc.organization.completeOnboarding.useMutation({
     onSuccess: async () => {
@@ -98,15 +139,26 @@ export default function Onboarding() {
   };
 
   const addFaq = () => {
-    if (newQuestion.trim() && newAnswer.trim()) {
-      setFaqs([...faqs, { question: newQuestion.trim(), answer: newAnswer.trim() }]);
+    if (newQuestion.trim() && newAnswer.trim() && organizationId) {
+      createFaq.mutate({
+        organizationId,
+        type: "faq",
+        title: newQuestion.trim(),
+        content: newAnswer.trim(),
+        aiEnabled: true,
+      });
       setNewQuestion("");
       setNewAnswer("");
     }
   };
 
-  const removeFaq = (indexToRemove: number) => {
-    setFaqs(faqs.filter((_, idx) => idx !== indexToRemove));
+  const removeFaq = (id: number) => {
+    deleteFaq.mutate({ id });
+  };
+
+  const goToStep = (nextStep: number) => {
+    persistProgress();
+    setStep(nextStep);
   };
 
   const handleSubmit = () => {
@@ -118,7 +170,6 @@ export default function Onboarding() {
       phone,
       businessHours,
       services,
-      faqs,
       aiInstructions,
     });
   };
@@ -356,13 +407,13 @@ export default function Onboarding() {
                   <div className="space-y-2 pt-2">
                     <Label className="text-zinc-600">Saved FAQs ({faqs.length})</Label>
                     <div className="divide-y divide-zinc-100 border border-zinc-100 rounded-xl overflow-hidden max-h-[220px] overflow-y-auto">
-                      {faqs.map((faq, idx) => (
-                        <div key={idx} className="p-3.5 flex items-start justify-between gap-4 bg-white hover:bg-zinc-50/30 transition-colors">
+                      {faqs.map((faq) => (
+                        <div key={faq.id} className="p-3.5 flex items-start justify-between gap-4 bg-white hover:bg-zinc-50/30 transition-colors">
                           <div className="min-w-0">
                             <span className="text-zinc-950 font-bold block truncate">{faq.question}</span>
                             <span className="text-zinc-500 font-medium block truncate mt-0.5">{faq.answer}</span>
                           </div>
-                          <button onClick={() => removeFaq(idx)} className="text-zinc-400 hover:text-red-500 p-1 shrink-0">
+                          <button onClick={() => removeFaq(faq.id)} className="text-zinc-400 hover:text-red-500 p-1 shrink-0">
                             <Trash className="w-3.5 h-3.5" />
                           </button>
                         </div>
@@ -403,7 +454,7 @@ export default function Onboarding() {
               {step > 1 ? (
                 <Button
                   variant="outline"
-                  onClick={() => setStep(step - 1)}
+                  onClick={() => goToStep(step - 1)}
                   className="text-zinc-700 border-zinc-200 h-10 px-4 rounded-lg text-xs font-bold hover:bg-zinc-50 shadow-none flex items-center gap-1.5"
                 >
                   <ChevronLeft className="w-4 h-4" /> Back
@@ -415,7 +466,7 @@ export default function Onboarding() {
               {step < 5 ? (
                 <Button
                   disabled={!isStepValid()}
-                  onClick={() => setStep(step + 1)}
+                  onClick={() => goToStep(step + 1)}
                   className="bg-indigo-600 hover:bg-indigo-700 text-white h-10 px-4 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors disabled:opacity-50"
                 >
                   Continue <ChevronRight className="w-4 h-4" />

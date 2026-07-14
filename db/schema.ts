@@ -39,7 +39,9 @@ export const passwordResetTokens = mysqlTable(
   "passwordResetTokens",
   {
     id: serial("id").primaryKey(),
-    userId: bigint("userId", { mode: "number", unsigned: true }).notNull(),
+    userId: bigint("userId", { mode: "number", unsigned: true })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
     tokenHash: varchar("tokenHash", { length: 128 }).notNull().unique(),
     expiresAt: timestamp("expiresAt").notNull(),
     usedAt: timestamp("usedAt"),
@@ -78,6 +80,11 @@ export const organizations = mysqlTable(
   (table) => ({
     slugIdx: uniqueIndex("slug_idx").on(table.slug),
     nameIdx: index("org_name_idx").on(table.name),
+    // Unique (not just indexed): inbound SMS/email webhooks resolve the tenant by
+    // an exact match on this column, so two organizations sharing a number/address
+    // would make routing ambiguous and could misfile a customer's messages.
+    phoneIdx: uniqueIndex("org_phone_idx").on(table.phone),
+    emailIdx: uniqueIndex("org_email_idx").on(table.email),
   })
 );
 
@@ -89,8 +96,12 @@ export const organizationMembers = mysqlTable(
   "organizationMembers",
   {
     id: serial("id").primaryKey(),
-    organizationId: bigint("organizationId", { mode: "number", unsigned: true }).notNull(),
-    userId: bigint("userId", { mode: "number", unsigned: true }).notNull(),
+    organizationId: bigint("organizationId", { mode: "number", unsigned: true })
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    userId: bigint("userId", { mode: "number", unsigned: true })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
     role: mysqlEnum("role", ["owner", "admin", "manager", "member"]).default("member").notNull(),
     title: varchar("title", { length: 255 }),
     isDefault: boolean("isDefault").default(false),
@@ -107,12 +118,43 @@ export const organizationMembers = mysqlTable(
 export type OrganizationMember = typeof organizationMembers.$inferSelect;
 export type InsertOrganizationMember = typeof organizationMembers.$inferInsert;
 
+// ─── Organization Invitations ────────────────────────────────────────────
+export const organizationInvitations = mysqlTable(
+  "organizationInvitations",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: bigint("organizationId", { mode: "number", unsigned: true })
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    email: varchar("email", { length: 320 }).notNull(),
+    role: mysqlEnum("role", ["admin", "manager", "member"]).default("member").notNull(),
+    tokenHash: varchar("tokenHash", { length: 128 }).notNull().unique(),
+    status: mysqlEnum("status", ["pending", "accepted", "revoked", "expired"]).default("pending").notNull(),
+    invitedBy: bigint("invitedBy", { mode: "number", unsigned: true }).references(() => users.id, {
+      onDelete: "set null",
+    }),
+    expiresAt: timestamp("expiresAt").notNull(),
+    acceptedAt: timestamp("acceptedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    orgIdx: index("invite_org_idx").on(table.organizationId),
+    emailIdx: index("invite_email_idx").on(table.email),
+    statusIdx: index("invite_status_idx").on(table.status),
+  })
+);
+
+export type OrganizationInvitation = typeof organizationInvitations.$inferSelect;
+export type InsertOrganizationInvitation = typeof organizationInvitations.$inferInsert;
+
 // ─── Customers (people who contact the business) ────────────────────────
 export const customers = mysqlTable(
   "customers",
   {
     id: serial("id").primaryKey(),
-    organizationId: bigint("organizationId", { mode: "number", unsigned: true }).notNull(),
+    organizationId: bigint("organizationId", { mode: "number", unsigned: true })
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
     firstName: varchar("firstName", { length: 255 }).notNull(),
     lastName: varchar("lastName", { length: 255 }).notNull(),
     email: varchar("email", { length: 320 }),
@@ -143,8 +185,12 @@ export const leads = mysqlTable(
   "leads",
   {
     id: serial("id").primaryKey(),
-    organizationId: bigint("organizationId", { mode: "number", unsigned: true }).notNull(),
-    customerId: bigint("customerId", { mode: "number", unsigned: true }),
+    organizationId: bigint("organizationId", { mode: "number", unsigned: true })
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    customerId: bigint("customerId", { mode: "number", unsigned: true }).references(() => customers.id, {
+      onDelete: "set null",
+    }),
     firstName: varchar("firstName", { length: 255 }).notNull(),
     lastName: varchar("lastName", { length: 255 }).notNull(),
     email: varchar("email", { length: 320 }),
@@ -178,7 +224,9 @@ export const leads = mysqlTable(
       .notNull(),
     priority: mysqlEnum("priority", ["low", "medium", "high", "urgent"]).default("medium"),
     estimatedValue: int("estimatedValue"),
-    assignedTo: bigint("assignedTo", { mode: "number", unsigned: true }),
+    assignedTo: bigint("assignedTo", { mode: "number", unsigned: true }).references(() => users.id, {
+      onDelete: "set null",
+    }),
     tags: json("tags").$type<string[]>(),
     notes: text("notes"),
     customFields: json("customFields").$type<Record<string, unknown>>(),
@@ -193,6 +241,8 @@ export const leads = mysqlTable(
     assignedIdx: index("lead_assigned_idx").on(table.assignedTo),
     customerIdx: index("lead_customer_idx").on(table.customerId),
     sourceIdx: index("lead_source_idx").on(table.source),
+    emailIdx: index("lead_email_idx").on(table.email),
+    phoneIdx: index("lead_phone_idx").on(table.phone),
   })
 );
 
@@ -204,14 +254,22 @@ export const conversations = mysqlTable(
   "conversations",
   {
     id: serial("id").primaryKey(),
-    organizationId: bigint("organizationId", { mode: "number", unsigned: true }).notNull(),
-    customerId: bigint("customerId", { mode: "number", unsigned: true }),
-    leadId: bigint("leadId", { mode: "number", unsigned: true }),
+    organizationId: bigint("organizationId", { mode: "number", unsigned: true })
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    customerId: bigint("customerId", { mode: "number", unsigned: true }).references(() => customers.id, {
+      onDelete: "set null",
+    }),
+    leadId: bigint("leadId", { mode: "number", unsigned: true }).references(() => leads.id, {
+      onDelete: "set null",
+    }),
     channel: mysqlEnum("channel", ["sms", "email", "web_chat", "phone", "ai_chat", "whatsapp"]).notNull(),
     subject: varchar("subject", { length: 500 }),
     status: mysqlEnum("status", ["open", "closed", "pending", "spam"]).default("open").notNull(),
     priority: mysqlEnum("priority", ["low", "medium", "high", "urgent"]).default("medium"),
-    assignedTo: bigint("assignedTo", { mode: "number", unsigned: true }),
+    assignedTo: bigint("assignedTo", { mode: "number", unsigned: true }).references(() => users.id, {
+      onDelete: "set null",
+    }),
     aiHandled: boolean("aiHandled").default(false),
     aiSummary: text("aiSummary"),
     lastMessageAt: timestamp("lastMessageAt"),
@@ -240,7 +298,9 @@ export const messages = mysqlTable(
   "messages",
   {
     id: serial("id").primaryKey(),
-    conversationId: bigint("conversationId", { mode: "number", unsigned: true }).notNull(),
+    conversationId: bigint("conversationId", { mode: "number", unsigned: true })
+      .notNull()
+      .references(() => conversations.id, { onDelete: "cascade" }),
     senderType: mysqlEnum("senderType", ["customer", "agent", "ai", "system"]).notNull(),
     senderId: bigint("senderId", { mode: "number", unsigned: true }),
     content: text("content").notNull(),
@@ -266,9 +326,15 @@ export const calls = mysqlTable(
   "calls",
   {
     id: serial("id").primaryKey(),
-    organizationId: bigint("organizationId", { mode: "number", unsigned: true }).notNull(),
-    customerId: bigint("customerId", { mode: "number", unsigned: true }),
-    leadId: bigint("leadId", { mode: "number", unsigned: true }),
+    organizationId: bigint("organizationId", { mode: "number", unsigned: true })
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    customerId: bigint("customerId", { mode: "number", unsigned: true }).references(() => customers.id, {
+      onDelete: "set null",
+    }),
+    leadId: bigint("leadId", { mode: "number", unsigned: true }).references(() => leads.id, {
+      onDelete: "set null",
+    }),
     phoneNumber: varchar("phoneNumber", { length: 50 }).notNull(),
     direction: mysqlEnum("direction", ["inbound", "outbound"]).notNull(),
     status: mysqlEnum("status", ["queued", "ringing", "in_progress", "completed", "missed", "voicemail", "failed", "busy", "no_answer"])
@@ -281,7 +347,9 @@ export const calls = mysqlTable(
     transcriptStatus: mysqlEnum("transcriptStatus", ["pending", "processing", "completed", "failed"]).default("pending"),
     aiHandled: boolean("aiHandled").default(false),
     aiSummary: text("aiSummary"),
-    userId: bigint("userId", { mode: "number", unsigned: true }),
+    userId: bigint("userId", { mode: "number", unsigned: true }).references(() => users.id, {
+      onDelete: "set null",
+    }),
     notes: text("notes"),
     startedAt: timestamp("startedAt"),
     endedAt: timestamp("endedAt"),
@@ -306,9 +374,15 @@ export const appointments = mysqlTable(
   "appointments",
   {
     id: serial("id").primaryKey(),
-    organizationId: bigint("organizationId", { mode: "number", unsigned: true }).notNull(),
-    customerId: bigint("customerId", { mode: "number", unsigned: true }),
-    leadId: bigint("leadId", { mode: "number", unsigned: true }),
+    organizationId: bigint("organizationId", { mode: "number", unsigned: true })
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    customerId: bigint("customerId", { mode: "number", unsigned: true }).references(() => customers.id, {
+      onDelete: "set null",
+    }),
+    leadId: bigint("leadId", { mode: "number", unsigned: true }).references(() => leads.id, {
+      onDelete: "set null",
+    }),
     title: varchar("title", { length: 500 }).notNull(),
     description: text("description"),
     location: varchar("location", { length: 500 }),
@@ -318,7 +392,9 @@ export const appointments = mysqlTable(
       .default("scheduled")
       .notNull(),
     type: mysqlEnum("type", ["call", "meeting", "demo", "follow_up", "consultation", "other"]).default("meeting"),
-    assignedTo: bigint("assignedTo", { mode: "number", unsigned: true }),
+    assignedTo: bigint("assignedTo", { mode: "number", unsigned: true }).references(() => users.id, {
+      onDelete: "set null",
+    }),
     notes: text("notes"),
     reminderSent: boolean("reminderSent").default(false),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -340,15 +416,23 @@ export const tasks = mysqlTable(
   "tasks",
   {
     id: serial("id").primaryKey(),
-    organizationId: bigint("organizationId", { mode: "number", unsigned: true }).notNull(),
-    customerId: bigint("customerId", { mode: "number", unsigned: true }),
-    leadId: bigint("leadId", { mode: "number", unsigned: true }),
+    organizationId: bigint("organizationId", { mode: "number", unsigned: true })
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    customerId: bigint("customerId", { mode: "number", unsigned: true }).references(() => customers.id, {
+      onDelete: "set null",
+    }),
+    leadId: bigint("leadId", { mode: "number", unsigned: true }).references(() => leads.id, {
+      onDelete: "set null",
+    }),
     title: varchar("title", { length: 500 }).notNull(),
     description: text("description"),
     type: mysqlEnum("type", ["follow_up", "call", "email", "meeting", "demo", "reminder", "other"]).default("follow_up"),
     status: mysqlEnum("status", ["pending", "in_progress", "completed", "cancelled", "overdue"]).default("pending").notNull(),
     priority: mysqlEnum("priority", ["low", "medium", "high", "urgent"]).default("medium"),
-    assignedTo: bigint("assignedTo", { mode: "number", unsigned: true }),
+    assignedTo: bigint("assignedTo", { mode: "number", unsigned: true }).references(() => users.id, {
+      onDelete: "set null",
+    }),
     dueDate: timestamp("dueDate"),
     completedAt: timestamp("completedAt"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -370,7 +454,9 @@ export const automations = mysqlTable(
   "automations",
   {
     id: serial("id").primaryKey(),
-    organizationId: bigint("organizationId", { mode: "number", unsigned: true }).notNull(),
+    organizationId: bigint("organizationId", { mode: "number", unsigned: true })
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
     name: varchar("name", { length: 255 }).notNull(),
     description: text("description"),
     trigger: mysqlEnum("trigger", [
@@ -389,7 +475,9 @@ export const automations = mysqlTable(
     status: mysqlEnum("status", ["active", "paused", "draft"]).default("draft").notNull(),
     runCount: int("runCount").default(0),
     lastRunAt: timestamp("lastRunAt"),
-    createdBy: bigint("createdBy", { mode: "number", unsigned: true }),
+    createdBy: bigint("createdBy", { mode: "number", unsigned: true }).references(() => users.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },
@@ -408,7 +496,9 @@ export const subscriptions = mysqlTable(
   "subscriptions",
   {
     id: serial("id").primaryKey(),
-    organizationId: bigint("organizationId", { mode: "number", unsigned: true }).notNull(),
+    organizationId: bigint("organizationId", { mode: "number", unsigned: true })
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
     plan: mysqlEnum("plan", ["starter", "professional", "enterprise"]).notNull(),
     status: mysqlEnum("status", ["trialing", "active", "past_due", "cancelled", "paused"]).default("trialing").notNull(),
     stripeCustomerId: varchar("stripeCustomerId", { length: 255 }),
@@ -437,7 +527,9 @@ export const knowledgeBase = mysqlTable(
   "knowledgeBase",
   {
     id: serial("id").primaryKey(),
-    organizationId: bigint("organizationId", { mode: "number", unsigned: true }).notNull(),
+    organizationId: bigint("organizationId", { mode: "number", unsigned: true })
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
     type: mysqlEnum("type", ["faq", "service", "pricing", "policy", "product", "script", "general"]).notNull(),
     title: varchar("title", { length: 500 }).notNull(),
     content: text("content").notNull(),
@@ -445,7 +537,9 @@ export const knowledgeBase = mysqlTable(
     tags: json("tags").$type<string[]>(),
     aiEnabled: boolean("aiEnabled").default(true),
     metadata: json("metadata").$type<Record<string, unknown>>(),
-    createdBy: bigint("createdBy", { mode: "number", unsigned: true }),
+    createdBy: bigint("createdBy", { mode: "number", unsigned: true }).references(() => users.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },
@@ -463,7 +557,9 @@ export const activities = mysqlTable(
   "activities",
   {
     id: serial("id").primaryKey(),
-    organizationId: bigint("organizationId", { mode: "number", unsigned: true }).notNull(),
+    organizationId: bigint("organizationId", { mode: "number", unsigned: true })
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
     actorId: bigint("actorId", { mode: "number", unsigned: true }),
     actorType: mysqlEnum("actorType", ["user", "system", "ai", "customer"]).default("user").notNull(),
     entityType: mysqlEnum("entityType", ["lead", "customer", "conversation", "call", "appointment", "task", "automation", "organization", "user"]).notNull(),

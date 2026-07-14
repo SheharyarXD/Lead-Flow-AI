@@ -5,7 +5,6 @@ import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { appRouter } from "./router";
 import { createContext } from "./context";
 import { env } from "./lib/env";
-import { Paths } from "@contracts/constants";
 
 const app = new Hono<{ Bindings: HttpBindings }>();
 
@@ -22,10 +21,18 @@ app.use("/api/trpc/*", async (c) => {
 // ── Inbound Webhooks for SMS & Email ──
 import { getDb } from "./queries/connection";
 import { customers, conversations, activities, organizations } from "@db/schema";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { createMessage } from "./queries/conversations";
 import { triggerAIAutoReply } from "./lib/ai-agent";
 import twilio from "twilio";
+import { timingSafeEqual } from "crypto";
+
+function safeCompare(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return timingSafeEqual(bufA, bufB);
+}
 
 app.post("/api/webhooks/sms", async (c) => {
   const db = getDb();
@@ -50,7 +57,7 @@ app.post("/api/webhooks/sms", async (c) => {
     }
     if (!organization) return c.text("<Response></Response>", 404, { "Content-Type": "application/xml" });
     let customer = await db.query.customers.findFirst({
-      where: eq(customers.phone, fromNum),
+      where: and(eq(customers.phone, fromNum), eq(customers.organizationId, organization.id)),
     });
 
     if (!customer) {
@@ -62,7 +69,7 @@ app.post("/api/webhooks/sms", async (c) => {
         source: "sms",
         status: "active",
       }).$returningId();
-      
+
       customer = await db.query.customers.findFirst({
         where: eq(customers.id, custResult.id),
       });
@@ -72,6 +79,7 @@ app.post("/api/webhooks/sms", async (c) => {
       let conv = await db.query.conversations.findFirst({
         where: and(
           eq(conversations.customerId, customer.id),
+          eq(conversations.organizationId, organization.id),
           eq(conversations.channel, "sms"),
           eq(conversations.status, "open")
         ),
@@ -150,14 +158,14 @@ app.post("/api/webhooks/email", async (c) => {
     // The receiving address is the tenant routing key. Providers should sign
     // requests upstream; production rejects an unconfigured webhook secret.
     const emailSecret = process.env.EMAIL_WEBHOOK_SECRET;
-    if (env.isProduction && (!emailSecret || c.req.header("x-webhook-secret") !== emailSecret)) return c.json({ success: false }, 401);
+    if (env.isProduction && (!emailSecret || !safeCompare(c.req.header("x-webhook-secret") ?? "", emailSecret))) return c.json({ success: false }, 401);
     let organization = toEmail ? await db.query.organizations.findFirst({ where: eq(organizations.email, toEmail) }) : null;
     if (!organization && !env.isProduction) {
       organization = await db.query.organizations.findFirst();
     }
     if (!organization) return c.json({ success: false, error: "Unknown recipient" }, 404);
     let customer = await db.query.customers.findFirst({
-      where: eq(customers.email, fromEmail),
+      where: and(eq(customers.email, fromEmail), eq(customers.organizationId, organization.id)),
     });
 
     if (!customer) {
@@ -179,6 +187,7 @@ app.post("/api/webhooks/email", async (c) => {
       let conv = await db.query.conversations.findFirst({
         where: and(
           eq(conversations.customerId, customer.id),
+          eq(conversations.organizationId, organization.id),
           eq(conversations.channel, "email"),
           eq(conversations.status, "open")
         ),

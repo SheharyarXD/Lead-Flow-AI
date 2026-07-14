@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { toast } from "sonner";
 import { trpc } from "@/providers/trpc";
 import { useOrganization } from "@/hooks/useOrganization";
 import { Button } from "@/components/ui/button";
@@ -12,6 +13,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Select,
   SelectContent,
@@ -38,14 +49,17 @@ export default function CalendarPage() {
   const navigate = useNavigate();
   const utils = trpc.useUtils();
 
-  const [currentDate, setCurrentDate] = useState(new Date(2024, 9, 12)); // Default to October 2024 to match the mockup
-  const [selectedDate, setSelectedDate] = useState(new Date(2024, 9, 12));
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedAppt, setSelectedAppt] = useState<any>(null);
 
-  // Filters state
-  const [selectedTeam, setSelectedTeam] = useState<string[]>(["alex", "ai", "sarah"]);
+  // Filters state — populated once real org members load (see effect below)
+  const [selectedTeam, setSelectedTeam] = useState<string[]>([]);
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [addOpen, setAddOpen] = useState(false);
+  const [rescheduleOpen, setRescheduleOpen] = useState(false);
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
+  const [rescheduleForm, setRescheduleForm] = useState({ startTime: "", endTime: "" });
 
   const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
   const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
@@ -60,12 +74,24 @@ export default function CalendarPage() {
   }, { enabled: !!organizationId });
 
   const { data: stats } = trpc.appointment.stats.useQuery({ organizationId: organizationId! }, { enabled: !!organizationId });
+  const { data: members } = trpc.organization.members.useQuery({ organizationId: organizationId! }, { enabled: !!organizationId });
+  const { data: customers } = trpc.customer.list.useQuery({ organizationId: organizationId!, limit: 100 }, { enabled: !!organizationId });
+
+  const UNASSIGNED = "unassigned";
+
+  // Default to showing every real team member, plus unassigned/AI-handled appointments
+  useEffect(() => {
+    if (members) {
+      setSelectedTeam([...members.map((m) => String(m.user!.id)), UNASSIGNED]);
+    }
+  }, [members]);
 
   const createAppointment = trpc.appointment.create.useMutation({
     onSuccess: () => {
       utils.appointment.list.invalidate();
       utils.appointment.stats.invalidate();
       setAddOpen(false);
+      toast.success("Appointment scheduled");
       setNewAppt({
         title: "",
         description: "",
@@ -73,9 +99,10 @@ export default function CalendarPage() {
         startTime: "",
         endTime: "",
         type: "meeting",
-        customerId: "",
+        customerId: "none",
       });
     },
+    onError: (err) => toast.error(err.message || "Failed to schedule appointment"),
   });
 
   const deleteMutation = trpc.appointment.delete.useMutation({
@@ -83,7 +110,20 @@ export default function CalendarPage() {
       utils.appointment.list.invalidate();
       utils.appointment.stats.invalidate();
       setSelectedAppt(null);
+      setCancelConfirmOpen(false);
+      toast.success("Appointment cancelled");
     },
+    onError: (err) => toast.error(err.message || "Failed to cancel appointment"),
+  });
+
+  const updateMutation = trpc.appointment.update.useMutation({
+    onSuccess: (updated) => {
+      utils.appointment.list.invalidate();
+      setSelectedAppt(updated);
+      setRescheduleOpen(false);
+      toast.success("Appointment rescheduled");
+    },
+    onError: (err) => toast.error(err.message || "Failed to reschedule appointment"),
   });
 
   const [newAppt, setNewAppt] = useState({
@@ -93,7 +133,7 @@ export default function CalendarPage() {
     startTime: "",
     endTime: "",
     type: "meeting",
-    customerId: "",
+    customerId: "none",
   });
 
   // Automatically select the first appointment on selected date if available
@@ -136,15 +176,37 @@ export default function CalendarPage() {
       startTime: new Date(newAppt.startTime),
       endTime: new Date(newAppt.endTime),
       type: newAppt.type,
-      customerId: newAppt.customerId ? parseInt(newAppt.customerId) : undefined,
+      customerId: newAppt.customerId && newAppt.customerId !== "none" ? parseInt(newAppt.customerId) : undefined,
+    });
+  };
+
+  const openReschedule = () => {
+    if (!selectedAppt) return;
+    const toLocalInput = (d: string | Date) => {
+      const date = new Date(d);
+      date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+      return date.toISOString().slice(0, 16);
+    };
+    setRescheduleForm({
+      startTime: toLocalInput(selectedAppt.startTime),
+      endTime: toLocalInput(selectedAppt.endTime),
+    });
+    setRescheduleOpen(true);
+  };
+
+  const handleReschedule = () => {
+    if (!selectedAppt || !rescheduleForm.startTime || !rescheduleForm.endTime) return;
+    updateMutation.mutate({
+      id: selectedAppt.id,
+      startTime: new Date(rescheduleForm.startTime),
+      endTime: new Date(rescheduleForm.endTime),
+      status: "rescheduled",
     });
   };
 
   const handleCancelAppointment = () => {
     if (!selectedAppt) return;
-    if (confirm("Are you sure you want to cancel this appointment?")) {
-      deleteMutation.mutate({ id: selectedAppt.id });
-    }
+    deleteMutation.mutate({ id: selectedAppt.id });
   };
 
   // Build calendar grids (42 days)
@@ -164,13 +226,8 @@ export default function CalendarPage() {
     miniDayIter.setDate(miniDayIter.getDate() + 1);
   }
 
-  // Map filters dynamically
-  const getApptAgent = (appt: any) => {
-    if (appt.assignedTo === 1) return "alex";
-    if (appt.assignedTo === 2) return "sarah";
-    if (appt.type === "call") return "ai";
-    return "alex";
-  };
+  // Real assignment: the appointment's assignedUser relation, or "unassigned"
+  const getApptAgentId = (appt: any) => (appt.assignedTo ? String(appt.assignedTo) : UNASSIGNED);
 
   const getFilteredApptsForDay = (date: Date) => {
     return appointments?.filter((a) => {
@@ -180,7 +237,7 @@ export default function CalendarPage() {
       if (!isSameDay) return false;
 
       // Filter by team
-      const agent = getApptAgent(a);
+      const agent = getApptAgentId(a);
       if (!selectedTeam.includes(agent)) return false;
 
       // Filter by type
@@ -213,24 +270,16 @@ export default function CalendarPage() {
     const start = new Date(appt.startTime);
     const timeString = start.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     const dateString = start.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
-    
-    // Mock values corresponding to details pane
-    const score = appt.lead ? ((appt.lead.id * 17) % 40 + 55) : 94;
-    const intent = appt.description || "Interested in enterprise automation for 50+ staff.";
-    const status = appt.lead?.status || "Qualified";
-    const phone = appt.customer?.phone || "+1 (555) 012-3456";
-    const source = appt.customer?.source || "Website SMS Widget";
 
     return {
-      time: `${timeString} (EST)`,
+      time: timeString,
       date: dateString,
       title: appt.title,
-      location: appt.location || "Google Meet Link",
-      score,
-      intent,
-      status,
-      phone,
-      source,
+      location: appt.location || "No location set",
+      intent: appt.description || null,
+      status: appt.lead?.status || appt.status,
+      phone: appt.customer?.phone || appt.lead?.phone || null,
+      source: appt.customer?.source || appt.lead?.source || null,
     };
   };
 
@@ -316,26 +365,32 @@ export default function CalendarPage() {
           </div>
         </div>
 
-        {/* Team members checkbox filter list */}
+        {/* Team members checkbox filter list — real org members */}
         <div className="space-y-2">
           <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Team Members</span>
           <div className="space-y-2 text-xs font-semibold text-zinc-700">
-            {[
-              { id: "alex", label: "Alex (Owner)", color: "bg-indigo-600" },
-              { id: "ai", label: "AI Assistant", color: "bg-cyan-400" },
-              { id: "sarah", label: "Sarah Miller", color: "bg-purple-400" },
-            ].map((member) => (
-              <label key={member.id} className="flex items-center gap-2.5 cursor-pointer">
-                <input 
-                  type="checkbox" 
-                  checked={selectedTeam.includes(member.id)}
-                  onChange={() => toggleTeamFilter(member.id)}
+            {members?.map((member) => (
+              <label key={member.user!.id} className="flex items-center gap-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={selectedTeam.includes(String(member.user!.id))}
+                  onChange={() => toggleTeamFilter(String(member.user!.id))}
                   className="rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer"
                 />
-                <span className={`w-2 h-2 rounded-full ${member.color}`} />
-                <span>{member.label}</span>
+                <span className="w-2 h-2 rounded-full bg-indigo-600" />
+                <span>{member.user?.name || member.user?.email}</span>
               </label>
             ))}
+            <label className="flex items-center gap-2.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={selectedTeam.includes(UNASSIGNED)}
+                onChange={() => toggleTeamFilter(UNASSIGNED)}
+                className="rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer"
+              />
+              <span className="w-2 h-2 rounded-full bg-zinc-400" />
+              <span>Unassigned</span>
+            </label>
           </div>
         </div>
 
@@ -461,15 +516,11 @@ export default function CalendarPage() {
                       {dayAppts.map((appt) => {
                         const start = new Date(appt.startTime);
                         const timeStr = start.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-                        const agent = getApptAgent(appt);
 
-                        // Block color based on assigned team member
-                        const blockStyle = 
-                          agent === "ai" 
-                            ? "bg-cyan-50 border-cyan-100 text-cyan-700" 
-                            : agent === "sarah" 
-                            ? "bg-purple-50 border-purple-100 text-purple-700" 
-                            : "bg-indigo-50 border-indigo-100 text-indigo-700";
+                        // Block color: assigned appointments in indigo, unassigned in zinc
+                        const blockStyle = appt.assignedTo
+                          ? "bg-indigo-50 border-indigo-100 text-indigo-700"
+                          : "bg-zinc-100 border-zinc-200 text-zinc-600";
 
                         const isSelectedAppt = selectedAppt && selectedAppt.id === appt.id;
 
@@ -530,12 +581,11 @@ export default function CalendarPage() {
                     : selectedAppt.title}
                 </span>
                 <div className="flex items-center gap-1.5 mt-1 select-none">
-                  <Badge className="bg-zinc-100 text-zinc-400 text-[8px] font-extrabold px-1.5 py-0.5 rounded shadow-none select-none">
-                    Lead Score: {apptDetails.score}
-                  </Badge>
-                  <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-100 text-[8px] font-extrabold px-1.5 py-0.5 rounded shadow-none capitalize">
-                    {apptDetails.status}
-                  </Badge>
+                  {apptDetails.status && (
+                    <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-100 text-[8px] font-extrabold px-1.5 py-0.5 rounded shadow-none capitalize">
+                      {apptDetails.status}
+                    </Badge>
+                  )}
                 </div>
               </div>
             </div>
@@ -558,11 +608,11 @@ export default function CalendarPage() {
               </div>
             </div>
 
-            {/* AI Meeting Intent message quote */}
+            {/* Meeting description */}
             <div className="space-y-2">
-              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block select-none">AI Meeting Intent</span>
-              <div className="bg-zinc-50 border border-zinc-150 rounded-xl p-3 text-xs text-zinc-650 italic leading-relaxed font-semibold">
-                "{apptDetails.intent}"
+              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block select-none">Description</span>
+              <div className="bg-zinc-50 border border-zinc-150 rounded-xl p-3 text-xs text-zinc-650 leading-relaxed font-semibold">
+                {apptDetails.intent || "No description provided."}
               </div>
             </div>
 
@@ -585,17 +635,17 @@ export default function CalendarPage() {
 
             {/* Reschedule/Cancel operations */}
             <div className="grid grid-cols-2 gap-2 select-none pt-2 border-t border-zinc-100">
-              <Button 
+              <Button
                 variant="outline"
-                onClick={() => alert("Rescheduling prompt is under development.")}
+                onClick={openReschedule}
                 className="h-9 text-xs font-bold text-zinc-700 border-zinc-200 hover:bg-zinc-50 bg-white rounded-lg shadow-none flex items-center justify-center gap-1"
               >
                 <RefreshCw className="w-3.5 h-3.5 text-zinc-500" />
                 Reschedule
               </Button>
-              <Button 
+              <Button
                 variant="outline"
-                onClick={handleCancelAppointment}
+                onClick={() => setCancelConfirmOpen(true)}
                 disabled={deleteMutation.isPending}
                 className="h-9 text-xs font-bold text-red-600 border-zinc-200 hover:bg-red-50/50 hover:border-red-150 bg-white rounded-lg shadow-none flex items-center justify-center gap-1"
               >
@@ -610,11 +660,11 @@ export default function CalendarPage() {
               <div className="space-y-2.5 pl-0.5 text-xs text-zinc-700 font-semibold">
                 <div className="flex items-center gap-2">
                   <Phone className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-                  <span>{apptDetails.phone}</span>
+                  <span>{apptDetails.phone || "—"}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Tag className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-                  <span>Source: {apptDetails.source}</span>
+                  <span>Source: {apptDetails.source || "—"}</span>
                 </div>
               </div>
             </div>
@@ -685,13 +735,20 @@ export default function CalendarPage() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label className="text-zinc-655">Lead / Customer (ID)</Label>
-                <Input 
-                  placeholder="e.g. 3" 
-                  value={newAppt.customerId} 
-                  onChange={(e) => setNewAppt({ ...newAppt, customerId: e.target.value })} 
-                  className="bg-zinc-50 border-zinc-200 text-xs rounded-lg focus-visible:ring-zinc-400 focus-visible:border-zinc-400 shadow-none" 
-                />
+                <Label className="text-zinc-655">Customer</Label>
+                <Select value={newAppt.customerId} onValueChange={(v) => setNewAppt({ ...newAppt, customerId: v })}>
+                  <SelectTrigger className="bg-zinc-50 border-zinc-200 text-xs rounded-lg shadow-none">
+                    <SelectValue placeholder="Select Customer (Optional)" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-white border-zinc-200">
+                    <SelectItem value="none">None / Unlinked</SelectItem>
+                    {customers?.map((cust) => (
+                      <SelectItem key={cust.id} value={cust.id.toString()}>
+                        {cust.firstName} {cust.lastName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             <div className="space-y-2">
@@ -720,6 +777,59 @@ export default function CalendarPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Reschedule Dialog */}
+      <Dialog open={rescheduleOpen} onOpenChange={setRescheduleOpen}>
+        <DialogContent className="max-w-md bg-white rounded-xl border border-zinc-200 shadow-lg text-xs font-medium text-zinc-700">
+          <DialogHeader>
+            <DialogTitle className="text-zinc-950 font-bold text-lg">Reschedule Appointment</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-4">
+            <div className="space-y-2">
+              <Label className="text-zinc-655">New Start Time *</Label>
+              <Input
+                type="datetime-local"
+                value={rescheduleForm.startTime}
+                onChange={(e) => setRescheduleForm({ ...rescheduleForm, startTime: e.target.value })}
+                className="bg-zinc-50 border-zinc-200 text-xs rounded-lg shadow-none"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-zinc-655">New End Time *</Label>
+              <Input
+                type="datetime-local"
+                value={rescheduleForm.endTime}
+                onChange={(e) => setRescheduleForm({ ...rescheduleForm, endTime: e.target.value })}
+                className="bg-zinc-50 border-zinc-200 text-xs rounded-lg shadow-none"
+              />
+            </div>
+            <Button
+              onClick={handleReschedule}
+              disabled={updateMutation.isPending || !rescheduleForm.startTime || !rescheduleForm.endTime}
+              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-10 rounded-lg shadow-sm"
+            >
+              {updateMutation.isPending ? "Saving..." : "Confirm Reschedule"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={cancelConfirmOpen} onOpenChange={setCancelConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancel this appointment?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {selectedAppt && `"${selectedAppt.title}" will be cancelled and removed from the calendar.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep Appointment</AlertDialogCancel>
+            <AlertDialogAction onClick={handleCancelAppointment} className="bg-red-600 hover:bg-red-700">
+              Cancel Appointment
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
     </div>
   );

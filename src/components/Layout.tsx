@@ -20,7 +20,6 @@ import {
   Menu,
   PhoneCall,
   Bell,
-  HelpCircle,
   Settings,
   Search,
   CheckSquare,
@@ -47,6 +46,12 @@ export default function Layout() {
   const { data: subscription, isLoading: subLoading } = trpc.organization.getDefaultSubscription.useQuery(undefined, {
     enabled: !!user,
   });
+
+  const { data: conversationStats } = trpc.conversation.stats.useQuery(
+    { organizationId: organization?.id ?? 0 },
+    { enabled: !!user && !!organization?.id, refetchInterval: 30000 }
+  );
+  const unreadCount = conversationStats?.unread ?? 0;
 
   const getTrialDays = () => {
     if (subLoading) return { label: "loading...", percent: 0 };
@@ -81,12 +86,6 @@ export default function Layout() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isMobile]);
 
-  useEffect(() => {
-    if (!isLoading && !orgLoading && user && organization && !organization.onboardingCompletedAt && location.pathname !== "/onboarding") {
-      navigate("/onboarding");
-    }
-  }, [user, organization, isLoading, orgLoading, location.pathname, navigate]);
-
   if (isLoading || orgLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-[#fcfcfd]">
@@ -100,6 +99,14 @@ export default function Layout() {
 
   if (!user) {
     return <Navigate to="/login" replace />;
+  }
+
+  if (organization && !organization.onboardingCompletedAt && location.pathname !== "/onboarding") {
+    return <Navigate to="/onboarding" replace />;
+  }
+
+  if (organization?.onboardingCompletedAt && location.pathname === "/onboarding") {
+    return <Navigate to="/" replace />;
   }
 
   if (location.pathname === "/onboarding") {
@@ -161,12 +168,12 @@ export default function Layout() {
                     strokeWidth={isActive ? 2.5 : 2}
                   />
                   <span>{item.label}</span>
-                  {item.label === "Conversations" && (
+                  {item.label === "Conversations" && unreadCount > 0 && (
                     <Badge
                       variant="secondary"
                       className="ml-auto text-[10px] font-bold h-5 px-1.5 bg-indigo-600 text-white rounded-full border-none shadow-[0_1px_4px_rgba(79,70,229,0.2)]"
                     >
-                      3
+                      {unreadCount}
                     </Badge>
                   )}
                 </button>
@@ -253,13 +260,11 @@ export default function Layout() {
             </Button>
             <div className="w-[1px] h-6 bg-zinc-200" />
             
-            <button className="relative p-1.5 text-zinc-400 hover:text-zinc-900 transition-colors">
+            <button onClick={() => navigate("/conversations")} className="relative p-1.5 text-zinc-400 hover:text-zinc-900 transition-colors">
               <Bell className="w-5 h-5" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-white" />
-            </button>
-            
-            <button className="p-1.5 text-zinc-400 hover:text-zinc-900 transition-colors">
-              <HelpCircle className="w-5 h-5" />
+              {unreadCount > 0 && (
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-white" />
+              )}
             </button>
             
             <button className="p-1.5 text-zinc-400 hover:text-zinc-900 transition-colors" onClick={() => navigate("/settings")}>

@@ -9,7 +9,7 @@ import {
   deleteAutomation,
   getAutomationStats,
 } from "./queries/automations";
-import { requireOrganizationMembership, requireOrganizationRole } from "./queries/organizations";
+import { requireOnboardedOrganizationMembership as requireOrganizationMembership, requireOnboardedOrganizationRole as requireOrganizationRole } from "./queries/organizations";
 
 export const automationRouter = createRouter({
   list: authedQuery

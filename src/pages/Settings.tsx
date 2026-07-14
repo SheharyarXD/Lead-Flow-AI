@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { trpc } from "@/providers/trpc";
 import { useOrganization } from "@/hooks/useOrganization";
+import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,13 +27,59 @@ import {
   CreditCard,
   Calendar,
   Phone,
+  UserPlus,
+  X,
 } from "lucide-react";
+
+const ORG_ROLE_RANK: Record<string, number> = { owner: 3, admin: 2, manager: 1, member: 0 };
+const ROLE_LABEL: Record<string, string> = { owner: "Owner", admin: "Admin", manager: "Manager", member: "Agent" };
 
 export default function Settings() {
   const { organizationId } = useOrganization();
+  const { user } = useAuth();
   const utils = trpc.useUtils();
   const { data: org } = trpc.organization.getById.useQuery({ id: organizationId! }, { enabled: !!organizationId });
   const { data: members } = trpc.organization.members.useQuery({ organizationId: organizationId! }, { enabled: !!organizationId });
+  const myRole = members?.find((m) => m.user?.id === user?.id)?.role;
+  const canManageTeam = myRole === "owner" || myRole === "admin";
+
+  const { data: invitations } = trpc.organization.listInvitations.useQuery(
+    { organizationId: organizationId! },
+    { enabled: !!organizationId && canManageTeam }
+  );
+
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<"admin" | "manager" | "member">("member");
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
+
+  const inviteMutation = trpc.organization.inviteMember.useMutation({
+    onSuccess: () => {
+      utils.organization.listInvitations.invalidate({ organizationId: organizationId! });
+      setInviteEmail("");
+      setInviteError(null);
+      setInviteSuccess(`Invitation sent to ${inviteEmail}.`);
+      setTimeout(() => setInviteSuccess(null), 4000);
+    },
+    onError: (err) => setInviteError(err.message || "Failed to send invite."),
+  });
+
+  const revokeInviteMutation = trpc.organization.revokeInvitation.useMutation({
+    onSuccess: () => utils.organization.listInvitations.invalidate({ organizationId: organizationId! }),
+  });
+
+  const changeRoleMutation = trpc.organization.changeRole.useMutation({
+    onSuccess: () => utils.organization.members.invalidate({ organizationId: organizationId! }),
+  });
+
+  const removeMemberMutation = trpc.organization.removeMember.useMutation({
+    onSuccess: () => utils.organization.members.invalidate({ organizationId: organizationId! }),
+  });
+
+  const handleInvite = () => {
+    if (!inviteEmail.trim() || !organizationId) return;
+    inviteMutation.mutate({ organizationId, email: inviteEmail.trim(), role: inviteRole });
+  };
 
   // Real Knowledge Base State
   const [kbQuestion, setKbQuestion] = useState("");
@@ -89,6 +136,19 @@ export default function Settings() {
     timezone: "America/Los_Angeles",
   });
 
+  const DAY_KEYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as const;
+  const DAY_LABELS: Record<(typeof DAY_KEYS)[number], string> = {
+    monday: "Monday",
+    tuesday: "Tuesday",
+    wednesday: "Wednesday",
+    thursday: "Thursday",
+    friday: "Friday",
+    saturday: "Saturday",
+    sunday: "Sunday",
+  };
+  const [businessHours, setBusinessHours] = useState<Record<string, { open: string; close: string }>>({});
+  const [hoursSaveSuccess, setHoursSaveSuccess] = useState(false);
+
   const [aiForm, setAiForm] = useState({
     aiEnabled: true,
     greetingMessage: "",
@@ -114,6 +174,11 @@ export default function Settings() {
         greetingMessage: org.greetingMessage || "",
         aiInstructions: org.aiInstructions || "",
       });
+      setBusinessHours(
+        org.businessHours && Object.keys(org.businessHours).length > 0
+          ? org.businessHours
+          : Object.fromEntries(DAY_KEYS.map((d) => [d, { open: "09:00", close: "17:00" }]))
+      );
     }
   }, [org]);
 
@@ -159,6 +224,32 @@ export default function Settings() {
       id: organizationId!,
       aiEnabled: checked,
     });
+  };
+
+  const handleHourChange = (day: string, field: "open" | "close", value: string) => {
+    setBusinessHours((prev) => ({ ...prev, [day]: { ...prev[day], [field]: value } }));
+  };
+
+  const toggleDayClosed = (day: string) => {
+    setBusinessHours((prev) => {
+      const isClosed = prev[day]?.open === "closed";
+      return {
+        ...prev,
+        [day]: isClosed ? { open: "09:00", close: "17:00" } : { open: "closed", close: "closed" },
+      };
+    });
+  };
+
+  const handleSaveHours = () => {
+    updateOrg.mutate(
+      { id: organizationId!, businessHours },
+      {
+        onSuccess: () => {
+          setHoursSaveSuccess(true);
+          setTimeout(() => setHoursSaveSuccess(false), 3000);
+        },
+      }
+    );
   };
 
   return (
@@ -244,30 +335,41 @@ export default function Settings() {
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
-                {["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].map((day, i) => (
-                  <div key={day} className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-muted/50">
-                    <span className="text-sm font-medium w-32">{day}</span>
-                    <div className="flex items-center gap-2">
-                      {i < 5 ? (
-                        <>
-                          <Badge variant="outline" className="text-[10px]">8:00 AM - 6:00 PM</Badge>
-                          <Switch defaultChecked />
-                        </>
-                      ) : i === 5 ? (
-                        <>
-                          <Badge variant="outline" className="text-[10px]">9:00 AM - 2:00 PM</Badge>
-                          <Switch defaultChecked />
-                        </>
-                      ) : (
-                        <>
-                          <Badge variant="secondary" className="text-[10px]">Closed</Badge>
-                          <Switch />
-                        </>
-                      )}
+                {DAY_KEYS.map((day) => {
+                  const hours = businessHours[day] ?? { open: "09:00", close: "17:00" };
+                  const isClosed = hours.open === "closed";
+                  return (
+                    <div key={day} className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-muted/50">
+                      <span className="text-sm font-medium w-32">{DAY_LABELS[day]}</span>
+                      <div className="flex items-center gap-2">
+                        {!isClosed && (
+                          <>
+                            <Input
+                              type="time"
+                              value={hours.open}
+                              onChange={(e) => handleHourChange(day, "open", e.target.value)}
+                              className="w-28 h-8 text-xs"
+                            />
+                            <span className="text-xs text-muted-foreground">to</span>
+                            <Input
+                              type="time"
+                              value={hours.close}
+                              onChange={(e) => handleHourChange(day, "close", e.target.value)}
+                              className="w-28 h-8 text-xs"
+                            />
+                          </>
+                        )}
+                        {isClosed && <Badge variant="secondary" className="text-[10px]">Closed</Badge>}
+                        <Switch checked={!isClosed} onCheckedChange={() => toggleDayClosed(day)} />
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
+              <Button onClick={handleSaveHours} disabled={updateOrg.isPending} className="mt-4">
+                <Save className="w-4 h-4 mr-2" />
+                {updateOrg.isPending ? "Saving..." : hoursSaveSuccess ? "Saved!" : "Save Hours"}
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>
@@ -444,6 +546,71 @@ export default function Settings() {
 
         {/* Team */}
         <TabsContent value="team" className="space-y-4">
+          {canManageTeam && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Invite a Team Member</CardTitle>
+                <CardDescription>Send an email invite to add an Admin, Manager, or Agent to your organization.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {inviteError && <p className="text-sm text-red-600">{inviteError}</p>}
+                {inviteSuccess && <p className="text-sm text-emerald-600">{inviteSuccess}</p>}
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <Input
+                    placeholder="teammate@company.com"
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    className="flex-1"
+                  />
+                  <Select value={inviteRole} onValueChange={(v) => setInviteRole(v as typeof inviteRole)}>
+                    <SelectTrigger className="w-full sm:w-40">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(["admin", "manager", "member"] as const)
+                        .filter((r) => ORG_ROLE_RANK[r] < ORG_ROLE_RANK[myRole ?? "member"])
+                        .map((r) => (
+                          <SelectItem key={r} value={r}>{ROLE_LABEL[r]}</SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                  <Button onClick={handleInvite} disabled={inviteMutation.isPending || !inviteEmail.trim()}>
+                    <UserPlus className="w-4 h-4 mr-2" />
+                    {inviteMutation.isPending ? "Sending..." : "Send Invite"}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {canManageTeam && invitations && invitations.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Pending Invitations</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {invitations.map((invite) => (
+                    <div key={invite.id} className="flex items-center justify-between p-3 rounded-lg border">
+                      <div>
+                        <p className="text-sm font-medium">{invite.email}</p>
+                        <p className="text-xs text-muted-foreground">Invited as {ROLE_LABEL[invite.role]} · expires {new Date(invite.expiresAt).toLocaleDateString()}</p>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => revokeInviteMutation.mutate({ organizationId: organizationId!, invitationId: invite.id })}
+                        disabled={revokeInviteMutation.isPending}
+                      >
+                        <X className="w-4 h-4 mr-1" /> Revoke
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Team Members</CardTitle>
@@ -451,26 +618,65 @@ export default function Settings() {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {members?.map((member) => (
-                  <div key={member.id} className="flex items-center justify-between p-3 rounded-lg border">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center">
-                        <span className="text-sm font-medium text-primary">
-                          {member.user?.name?.charAt(0).toUpperCase() || "U"}
-                        </span>
+                {members?.map((member) => {
+                  const isSelf = member.user?.id === user?.id;
+                  const canAct =
+                    canManageTeam &&
+                    !isSelf &&
+                    member.role !== "owner" &&
+                    ORG_ROLE_RANK[member.role] < ORG_ROLE_RANK[myRole ?? "member"];
+                  const assignableRoles = (["admin", "manager", "member"] as const).filter(
+                    (r) => ORG_ROLE_RANK[r] < ORG_ROLE_RANK[myRole ?? "member"]
+                  );
+                  return (
+                    <div key={member.id} className="flex items-center justify-between p-3 rounded-lg border gap-3 flex-wrap">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center">
+                          <span className="text-sm font-medium text-primary">
+                            {member.user?.name?.charAt(0).toUpperCase() || "U"}
+                          </span>
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium">{member.user?.name || "Unknown"}{isSelf ? " (You)" : ""}</p>
+                          <p className="text-xs text-muted-foreground">{member.user?.email || ""}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-sm font-medium">{member.user?.name || "Unknown"}</p>
-                        <p className="text-xs text-muted-foreground">{member.user?.email || ""}</p>
+                      <div className="flex items-center gap-2 select-none">
+                        {canAct ? (
+                          <Select
+                            value={member.role}
+                            onValueChange={(v) =>
+                              changeRoleMutation.mutate({ organizationId: organizationId!, userId: member.user!.id, role: v as "admin" | "manager" | "member" })
+                            }
+                          >
+                            <SelectTrigger className="h-8 w-32 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {assignableRoles.map((r) => (
+                                <SelectItem key={r} value={r}>{ROLE_LABEL[r]}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <Badge variant={member.role === "owner" || member.role === "admin" ? "default" : "outline"} className="text-[10px]">
+                            {ROLE_LABEL[member.role]}
+                          </Badge>
+                        )}
+                        {canAct && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeMemberMutation.mutate({ organizationId: organizationId!, userId: member.user!.id })}
+                            disabled={removeMemberMutation.isPending}
+                          >
+                            <X className="w-4 h-4" />
+                          </Button>
+                        )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 select-none">
-                      <Badge variant={member.role === "owner" || member.role === "admin" ? "default" : "outline"} className="text-[10px] capitalize">
-                        {member.role === "owner" || member.role === "admin" ? "Admin" : member.role === "manager" ? "Manager" : "Collector"}
-                      </Badge>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
                 {(!members || members.length === 0) && (
                   <p className="text-sm text-muted-foreground text-center py-4">No team members found.</p>
                 )}
