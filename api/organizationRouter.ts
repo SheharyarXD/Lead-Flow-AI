@@ -91,7 +91,7 @@ export const organizationRouter = createRouter({
         industry: z.string().optional(),
         website: z.string().optional(),
         phone: z.string().optional(),
-        email: z.string().email().optional(),
+        email: z.string().email().or(z.literal("")).nullable().optional(),
         address: z.string().optional(),
         timezone: z.string().optional(),
         businessHours: z.record(z.string(), z.object({ open: z.string(), close: z.string() })).optional(),

@@ -26,6 +26,23 @@ import {
   CreditCard,
 } from "lucide-react";
 
+function formatZodError(message: string): string {
+  try {
+    if (message.startsWith("[")) {
+      const parsed = JSON.parse(message);
+      if (Array.isArray(parsed)) {
+        return parsed.map((issue: any) => {
+          const field = issue.path?.join(".") || "Field";
+          const fieldFormatted = field.replace(/([A-Z])/g, " $1");
+          const fieldCapitalized = fieldFormatted.charAt(0).toUpperCase() + fieldFormatted.slice(1);
+          return `${fieldCapitalized}: ${issue.message}`;
+        }).join(" | ");
+      }
+    }
+  } catch (e) {}
+  return message;
+}
+
 export default function Settings() {
   const { organizationId } = useOrganization();
   const utils = trpc.useUtils();
@@ -77,6 +94,11 @@ export default function Settings() {
       aiEnabled: true,
     });
   };
+
+  const [businessError, setBusinessError] = useState<string | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [twilioError, setTwilioError] = useState<string | null>(null);
+  const [smtpError, setSmtpError] = useState<string | null>(null);
 
   const [twilioForm, setTwilioForm] = useState({
     accountSid: "",
@@ -153,62 +175,78 @@ export default function Settings() {
   });
 
   const handleSaveTwilio = () => {
+    setTwilioError(null);
     updateOrg.mutate({
       id: organizationId!,
-      twilioAccountSid: twilioForm.accountSid.trim() || null,
-      twilioAuthToken: twilioForm.authToken.trim() || null,
-      twilioPhoneNumber: twilioForm.phoneNumber.trim() || null,
+      twilioAccountSid: twilioForm.accountSid.trim() || undefined,
+      twilioAuthToken: twilioForm.authToken.trim() || undefined,
+      twilioPhoneNumber: twilioForm.phoneNumber.trim() || undefined,
     }, {
       onSuccess: () => {
         setSaveTwilioSuccess(true);
         setTimeout(() => setSaveTwilioSuccess(false), 3000);
+      },
+      onError: (err) => {
+        setTwilioError(formatZodError(err.message || "Failed to save Twilio settings."));
       }
     });
   };
 
   const handleSaveSmtp = () => {
+    setSmtpError(null);
     updateOrg.mutate({
       id: organizationId!,
-      smtpHost: smtpForm.host.trim() || null,
+      smtpHost: smtpForm.host.trim() || undefined,
       smtpPort: smtpForm.port,
-      smtpUser: smtpForm.user.trim() || null,
-      smtpPass: smtpForm.pass.trim() || null,
-      smtpFromEmail: smtpForm.fromEmail.trim() || null,
+      smtpUser: smtpForm.user.trim() || undefined,
+      smtpPass: smtpForm.pass.trim() || undefined,
+      smtpFromEmail: smtpForm.fromEmail.trim() || undefined,
     }, {
       onSuccess: () => {
         setSaveSmtpSuccess(true);
         setTimeout(() => setSaveSmtpSuccess(false), 3000);
+      },
+      onError: (err) => {
+        setSmtpError(formatZodError(err.message || "Failed to save SMTP settings."));
       }
     });
   };
 
   const handleSaveBusiness = () => {
+    setBusinessError(null);
     updateOrg.mutate({
       id: organizationId!,
       name: businessForm.name,
       industry: businessForm.industry,
       phone: businessForm.phone,
-      email: businessForm.email,
-      website: businessForm.website,
+      email: businessForm.email || undefined,
+      website: businessForm.website || undefined,
     }, {
       onSuccess: () => {
         setSaveBusinessSuccess(true);
         setTimeout(() => setSaveBusinessSuccess(false), 3000);
+      },
+      onError: (err) => {
+        setBusinessError(formatZodError(err.message || "Failed to save business settings."));
       }
     });
   };
 
   const handleSaveAi = () => {
+    setAiError(null);
     updateOrg.mutate({
       id: organizationId!,
       aiEnabled: aiForm.aiEnabled,
       greetingMessage: aiForm.greetingMessage,
       aiInstructions: aiForm.aiInstructions,
-      openaiApiKey: aiForm.openaiApiKey.trim() || null,
+      openaiApiKey: aiForm.openaiApiKey.trim() || undefined,
     }, {
       onSuccess: () => {
         setSaveAiSuccess(true);
         setTimeout(() => setSaveAiSuccess(false), 3000);
+      },
+      onError: (err) => {
+        setAiError(formatZodError(err.message || "Failed to save AI settings."));
       }
     });
   };
@@ -263,6 +301,11 @@ export default function Settings() {
               <CardDescription>Update your company information visible to customers.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              {businessError && (
+                <div className="bg-red-50 border border-red-150 text-red-800 text-xs font-bold p-3 rounded-lg mb-2 text-left">
+                  {businessError}
+                </div>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Company Name</Label>
@@ -352,6 +395,11 @@ export default function Settings() {
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
+              {aiError && (
+                <div className="bg-red-50 border border-red-150 text-red-800 text-xs font-bold p-3 rounded-lg mb-2 text-left">
+                  {aiError}
+                </div>
+              )}
               <div className="space-y-2">
                 <Label>Greeting Message</Label>
                 <Input
@@ -558,6 +606,11 @@ export default function Settings() {
               <CardDescription>Enter your Twilio API credentials to send SMS messages from your own business number.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              {twilioError && (
+                <div className="bg-red-50 border border-red-150 text-red-800 text-xs font-bold p-3 rounded-lg mb-2 text-left">
+                  {twilioError}
+                </div>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2 text-left">
                   <Label>Twilio Account SID</Label>
@@ -604,6 +657,11 @@ export default function Settings() {
               <CardDescription>Configure your outgoing SMTP server credentials to send emails from your own domain.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              {smtpError && (
+                <div className="bg-red-50 border border-red-150 text-red-800 text-xs font-bold p-3 rounded-lg mb-2 text-left">
+                  {smtpError}
+                </div>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="space-y-2 text-left sm:col-span-2">
                   <Label>SMTP Host</Label>

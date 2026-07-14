@@ -21,6 +21,23 @@ import {
   Trash,
 } from "lucide-react";
 
+function formatZodError(message: string): string {
+  try {
+    if (message.startsWith("[")) {
+      const parsed = JSON.parse(message);
+      if (Array.isArray(parsed)) {
+        return parsed.map((issue: any) => {
+          const field = issue.path?.join(".") || "Field";
+          const fieldFormatted = field.replace(/([A-Z])/g, " $1");
+          const fieldCapitalized = fieldFormatted.charAt(0).toUpperCase() + fieldFormatted.slice(1);
+          return `${fieldCapitalized}: ${issue.message}`;
+        }).join(" | ");
+      }
+    }
+  } catch (e) {}
+  return message;
+}
+
 export default function Onboarding() {
   const { organizationId, refreshOrganizations } = useOrganization();
   const navigate = useNavigate();
@@ -60,7 +77,7 @@ export default function Onboarding() {
       navigate("/");
     },
     onError: (err) => {
-      setError(err.message || "Failed to complete onboarding. Please check your connection and try again.");
+      setError(formatZodError(err.message || "Failed to complete onboarding. Please check your connection and try again."));
     },
   });
 
