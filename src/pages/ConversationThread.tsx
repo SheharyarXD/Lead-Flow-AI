@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { toast } from "sonner";
 import { useParams, useNavigate } from "react-router";
 import { trpc } from "@/providers/trpc";
 import { useOrganization } from "@/hooks/useOrganization";
@@ -9,7 +10,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   MessageSquare,
   Search,
-  MoreVertical,
   Bot,
   Clock,
   Send,
@@ -20,6 +20,8 @@ import {
   Mail,
   Settings,
   DollarSign,
+  RefreshCw,
+  Activity as ActivityIcon,
 } from "lucide-react";
 
 export default function ConversationThread() {
@@ -40,19 +42,33 @@ export default function ConversationThread() {
   }, { enabled: !!organizationId });
 
   const { data: conversation, isLoading: threadLoading } = trpc.conversation.getById.useQuery({ id: convId });
+  const { data: activityLog, refetch: refetchActivity } = trpc.activity.list.useQuery(
+    { organizationId: organizationId!, entityType: "conversation", entityId: convId, limit: 8 },
+    { enabled: !!organizationId && !!convId }
+  );
   const utils = trpc.useUtils();
 
   const sendMessage = trpc.conversation.sendMessage.useMutation({
     onSuccess: () => {
       utils.conversation.getById.invalidate({ id: convId });
+      utils.activity.list.invalidate({ organizationId: organizationId!, entityType: "conversation", entityId: convId });
       setMessage("");
     },
+    onError: (err) => toast.error(err.message || "Failed to send message"),
   });
 
   const updateMutation = trpc.conversation.update.useMutation({
     onSuccess: () => {
       utils.conversation.getById.invalidate({ id: convId });
       utils.conversation.list.invalidate();
+    },
+    onError: (err) => toast.error(err.message || "Failed to update conversation"),
+  });
+
+  const markRead = trpc.conversation.markRead.useMutation({
+    onSuccess: () => {
+      utils.conversation.list.invalidate();
+      utils.conversation.getById.invalidate({ id: convId });
     },
   });
 
@@ -62,6 +78,14 @@ export default function ConversationThread() {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [conversation?.messages]);
+
+  // Mark the conversation read once it's open and has unread messages
+  useEffect(() => {
+    if (conversation && (conversation.unreadCount ?? 0) > 0) {
+      markRead.mutate({ id: conversation.id });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversation?.id, conversation?.unreadCount]);
 
   const handleSend = () => {
     if (!message.trim()) return;
@@ -161,12 +185,10 @@ export default function ConversationThread() {
     ? `${contact.firstName[0] || ""}${contact.lastName[0] || ""}`
     : "U";
 
-  // Dynamic Intent Score calculation
-  const intentScore = (0.75 + (conversation.id * 13) % 23 / 100).toFixed(2);
   const requiredService = conversation.subject || "General Consultation";
-  const budgetValue = conversation.lead?.estimatedValue 
-    ? `$${conversation.lead.estimatedValue.toLocaleString()} max` 
-    : "$2,000 max";
+  const budgetValue = conversation.lead?.estimatedValue
+    ? `$${conversation.lead.estimatedValue.toLocaleString()} max`
+    : "—";
 
   const urgencyLabel = conversation.priority === "urgent" 
     ? "🔴 Urgent (Active Leak)" 
@@ -185,7 +207,7 @@ export default function ConversationThread() {
           <div className="flex items-center justify-between">
             <h1 className="text-xl font-extrabold text-zinc-950">Messages</h1>
             <Badge className="bg-zinc-100 hover:bg-zinc-200 text-zinc-600 border-none font-bold text-[10px] py-1 px-2.5 rounded-full shadow-none shrink-0">
-              {conversations?.length ?? 24} Total
+              {conversations?.length ?? 0} Total
             </Badge>
           </div>
 
@@ -240,7 +262,7 @@ export default function ConversationThread() {
                   : "Unknown Customer";
                 
                 const isSelected = conv.id === convId;
-                const isUnread = (conv.unreadCount ?? 0) > 0 || (conv.status === "open" && !isSelected);
+                const isUnread = (conv.unreadCount ?? 0) > 0 && !isSelected;
 
                 return (
                   <div
@@ -336,7 +358,7 @@ export default function ConversationThread() {
                 </Badge>
               </h2>
               <p className="text-[10px] text-zinc-400 font-semibold mt-0.5">
-                {conversation.customer?.phone || conversation.lead?.phone || "No Phone Number"} • Phoenix, AZ
+                {conversation.customer?.phone || conversation.lead?.phone || "No Phone Number"}
               </p>
             </div>
           </div>
@@ -353,15 +375,11 @@ export default function ConversationThread() {
             </Button>
             
             {/* Call icon shortcut */}
-            <button 
+            <button
               onClick={() => navigate("/calls")}
               className="p-2 text-zinc-400 hover:text-zinc-900 border border-zinc-200 rounded-lg bg-white shadow-sm hover:bg-zinc-50 transition-colors"
             >
               <Smartphone className="w-3.5 h-3.5" />
-            </button>
-
-            <button className="text-zinc-400 hover:text-zinc-900 transition-colors p-1 rounded-lg">
-              <MoreVertical className="w-5 h-5" />
             </button>
           </div>
         </div>
@@ -506,9 +524,6 @@ export default function ConversationThread() {
         {/* Sidebar Header */}
         <div className="px-6 py-4 border-b border-zinc-100 flex items-center justify-between shrink-0">
           <span className="text-sm font-extrabold text-zinc-950">Lead Context</span>
-          <button className="text-zinc-400 hover:text-zinc-900 transition-colors p-1 rounded-lg">
-            <MoreVertical className="w-4 h-4" />
-          </button>
         </div>
 
         {/* Scrollable details contents */}
@@ -533,12 +548,12 @@ export default function ConversationThread() {
               </div>
             </div>
 
-            {/* Score Grid Info */}
+            {/* Score Grid Info — real fields only */}
             <div className="grid grid-cols-2 gap-3.5 w-full">
               <div className="border border-zinc-200/80 rounded-xl p-3.5 text-left bg-white shadow-sm">
-                <span className="text-[9px] font-bold text-zinc-400 tracking-wider">AI INTENT SCORE</span>
-                <p className="text-xl font-extrabold text-indigo-600 mt-1 tracking-tight">{intentScore}</p>
-                <span className="text-[9px] font-bold text-zinc-400 block mt-0.5">High</span>
+                <span className="text-[9px] font-bold text-zinc-400 tracking-wider">MESSAGES</span>
+                <p className="text-xl font-extrabold text-indigo-600 mt-1 tracking-tight">{conversation.messages?.length ?? 0}</p>
+                <span className="text-[9px] font-bold text-zinc-400 block mt-0.5">total</span>
               </div>
               <div className="border border-zinc-200/80 rounded-xl p-3.5 text-left bg-white shadow-sm">
                 <span className="text-[9px] font-bold text-zinc-400 tracking-wider">LAST ACTIVE</span>
@@ -551,7 +566,12 @@ export default function ConversationThread() {
             <div className="w-full text-left space-y-3 pt-2">
               <div className="flex items-center justify-between text-zinc-400">
                 <p className="text-[10px] font-bold tracking-wider">AI INSIGHTS</p>
-                <button className="text-[9px] font-bold text-indigo-600 hover:underline">Refresh</button>
+                <button
+                  onClick={() => utils.conversation.getById.invalidate({ id: convId })}
+                  className="text-[9px] font-bold text-indigo-600 hover:underline flex items-center gap-1"
+                >
+                  <RefreshCw className="w-2.5 h-2.5" /> Refresh
+                </button>
               </div>
               <div className="space-y-4 pl-0.5">
                 <div className="flex items-start gap-3">
@@ -610,11 +630,22 @@ export default function ConversationThread() {
                 </Button>
 
                 <div className="flex gap-2">
-                  <Button variant="outline" className="flex-1 text-zinc-700 border-zinc-300 font-bold text-[10px] h-8 rounded-lg flex items-center justify-center gap-1 hover:bg-zinc-50 transition-colors shadow-none">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      const email = conversation.customer?.email || conversation.lead?.email;
+                      if (!email) {
+                        toast.error("This contact does not have an email address saved.");
+                        return;
+                      }
+                      window.open(`mailto:${email}`);
+                    }}
+                    className="flex-1 text-zinc-700 border-zinc-300 font-bold text-[10px] h-8 rounded-lg flex items-center justify-center gap-1 hover:bg-zinc-50 transition-colors shadow-none"
+                  >
                     <Mail className="w-3 h-3" />
                     Email Lead
                   </Button>
-                  <Button 
+                  <Button
                     onClick={() => navigate(`/leads/${conversation.leadId || ""}`)}
                     variant="outline" 
                     className="flex-1 text-zinc-700 border-zinc-300 font-bold text-[10px] h-8 rounded-lg flex items-center justify-center gap-1 hover:bg-zinc-50 transition-colors shadow-none"
@@ -626,23 +657,27 @@ export default function ConversationThread() {
               </div>
             </div>
 
-            {/* Recent System Events timeline */}
+            {/* Recent System Events — real activity log entries */}
             <div className="w-full text-left pt-4 border-t border-zinc-100 space-y-3">
-              <p className="text-[10px] font-bold text-zinc-400 tracking-wider">RECENT SYSTEM EVENTS</p>
+              <div className="flex items-center justify-between text-zinc-400">
+                <p className="text-[10px] font-bold tracking-wider">RECENT SYSTEM EVENTS</p>
+                <button onClick={() => refetchActivity()} className="text-[9px] font-bold text-indigo-600 hover:underline flex items-center gap-1">
+                  <RefreshCw className="w-2.5 h-2.5" />
+                </button>
+              </div>
               <div className="space-y-3 pl-1 font-semibold text-zinc-700 text-[10px] leading-relaxed">
-                {conversation.lead?.status === "qualified" && (
-                  <div className="flex items-start gap-2">
-                    <span className="w-1.5 h-1.5 bg-indigo-600 rounded-full mt-1.5 shrink-0" />
+                {activityLog?.map((entry) => (
+                  <div key={entry.id} className="flex items-start gap-2">
+                    <ActivityIcon className="w-3 h-3 text-indigo-600 mt-0.5 shrink-0" />
                     <div>
-                      <p className="text-zinc-900 leading-tight">Lead Qualified by AI Agent automatically.</p>
-                      <span className="text-[9px] text-zinc-400 font-bold">3 mins ago</span>
+                      <p className="text-zinc-900 leading-tight">{entry.action}{entry.description ? `: ${entry.description}` : ""}</p>
+                      <span className="text-[9px] text-zinc-400 font-bold">{formatRelativeTime(entry.createdAt)}</span>
                     </div>
                   </div>
+                ))}
+                {(!activityLog || activityLog.length === 0) && (
+                  <p className="text-zinc-400 font-medium">No system events recorded yet.</p>
                 )}
-                <div className="flex items-start gap-2">
-                  <span className="w-1.5 h-1.5 bg-indigo-600 rounded-full mt-1.5 shrink-0" />
-                  <p className="text-zinc-900 leading-tight">Calendar Sync confirmed appointment ID #8812.</p>
-                </div>
               </div>
             </div>
 

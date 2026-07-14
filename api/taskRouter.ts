@@ -9,7 +9,8 @@ import {
   deleteTask,
   getTaskStats,
 } from "./queries/tasks";
-import { requireOrganizationMembership, requireOrganizationRole } from "./queries/organizations";
+import { requireOnboardedOrganizationMembership as requireOrganizationMembership, requireOnboardedOrganizationRole as requireOrganizationRole } from "./queries/organizations";
+import { createActivity } from "./queries/activities";
 
 export const taskRouter = createRouter({
   list: authedQuery
@@ -51,7 +52,7 @@ export const taskRouter = createRouter({
       })
     )
     .mutation(async ({ input, ctx }) => { await requireOrganizationRole(ctx.user.id, input.organizationId, ["owner", "admin", "manager", "member"]);
-      return createTask({
+      const task = await createTask({
         organizationId: input.organizationId,
         customerId: input.customerId,
         leadId: input.leadId,
@@ -63,6 +64,18 @@ export const taskRouter = createRouter({
         assignedTo: input.assignedTo,
         dueDate: input.dueDate,
       });
+      if (task) {
+        await createActivity({
+          organizationId: input.organizationId,
+          actorId: ctx.user.id,
+          actorType: "user",
+          entityType: "task",
+          entityId: task.id,
+          action: "Task created",
+          description: `Task "${task.title}" created`,
+        });
+      }
+      return task;
     }),
 
   update: authedQuery
@@ -81,13 +94,32 @@ export const taskRouter = createRouter({
     .mutation(async ({ input, ctx }) => {
       const { id, ...data } = input;
       const task = await findTaskById(id); if (!task) return null; await requireOrganizationRole(ctx.user.id, task.organizationId, ["owner", "admin", "manager", "member"]);
-      return updateTask(id, data as Record<string, unknown>);
+      const updated = await updateTask(id, task.organizationId, data as Record<string, unknown>);
+      await createActivity({
+        organizationId: task.organizationId,
+        actorId: ctx.user.id,
+        actorType: "user",
+        entityType: "task",
+        entityId: id,
+        action: data.status === "completed" ? "Task completed" : "Task updated",
+        description: `Task "${task.title}" ${data.status === "completed" ? "marked completed" : "updated"}`,
+      });
+      return updated;
     }),
 
   delete: authedQuery
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => { const task = await findTaskById(input.id); if (!task) return { success: true }; await requireOrganizationRole(ctx.user.id, task.organizationId, ["owner", "admin", "manager"]);
-      await deleteTask(input.id);
+      await deleteTask(input.id, task.organizationId);
+      await createActivity({
+        organizationId: task.organizationId,
+        actorId: ctx.user.id,
+        actorType: "user",
+        entityType: "task",
+        entityId: input.id,
+        action: "Task deleted",
+        description: `Task "${task.title}" deleted`,
+      });
       return { success: true };
     }),
 

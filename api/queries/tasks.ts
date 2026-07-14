@@ -55,13 +55,20 @@ export async function createTask(data: InferInsertModel<typeof tasks>) {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function updateTask(id: number, data: any) {
-  await getDb().update(tasks).set({ ...data, updatedAt: new Date() }).where(eq(tasks.id, id));
+export async function updateTask(id: number, organizationId: number, data: any) {
+  const patch = { ...data };
+  if (patch.status === "completed" && !patch.completedAt) {
+    patch.completedAt = new Date();
+  }
+  await getDb()
+    .update(tasks)
+    .set({ ...patch, updatedAt: new Date() })
+    .where(and(eq(tasks.id, id), eq(tasks.organizationId, organizationId)));
   return findTaskById(id);
 }
 
-export async function deleteTask(id: number) {
-  await getDb().delete(tasks).where(eq(tasks.id, id));
+export async function deleteTask(id: number, organizationId: number) {
+  await getDb().delete(tasks).where(and(eq(tasks.id, id), eq(tasks.organizationId, organizationId)));
 }
 
 export async function getTaskStats(organizationId: number) {

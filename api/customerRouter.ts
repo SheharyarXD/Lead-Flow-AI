@@ -9,7 +9,8 @@ import {
   deleteCustomer,
   countCustomersByOrganization,
 } from "./queries/customers";
-import { requireOrganizationMembership, requireOrganizationRole } from "./queries/organizations";
+import { requireOnboardedOrganizationMembership as requireOrganizationMembership, requireOnboardedOrganizationRole as requireOrganizationRole } from "./queries/organizations";
+import { createActivity } from "./queries/activities";
 
 export const customerRouter = createRouter({
   list: authedQuery
@@ -59,7 +60,7 @@ export const customerRouter = createRouter({
     )
     .mutation(async ({ input, ctx }) => {
       await requireOrganizationRole(ctx.user.id, input.organizationId, ["owner", "admin", "manager", "member"]);
-      return createCustomer({
+      const customer = await createCustomer({
         organizationId: input.organizationId,
         firstName: input.firstName,
         lastName: input.lastName,
@@ -69,6 +70,18 @@ export const customerRouter = createRouter({
         tags: input.tags,
         notes: input.notes,
       });
+      if (customer) {
+        await createActivity({
+          organizationId: input.organizationId,
+          actorId: ctx.user.id,
+          actorType: "user",
+          entityType: "customer",
+          entityId: customer.id,
+          action: "Customer created",
+          description: `Customer ${customer.firstName} ${customer.lastName} created`,
+        });
+      }
+      return customer;
     }),
 
   update: authedQuery
@@ -89,7 +102,17 @@ export const customerRouter = createRouter({
       const customer = await findCustomerById(id);
       if (!customer) return null;
       await requireOrganizationRole(ctx.user.id, customer.organizationId, ["owner", "admin", "manager", "member"]);
-      return updateCustomer(id, data as Record<string, unknown>);
+      const updated = await updateCustomer(id, customer.organizationId, data as Record<string, unknown>);
+      await createActivity({
+        organizationId: customer.organizationId,
+        actorId: ctx.user.id,
+        actorType: "user",
+        entityType: "customer",
+        entityId: id,
+        action: "Customer updated",
+        description: `Customer ${customer.firstName} ${customer.lastName} updated`,
+      });
+      return updated;
     }),
 
   delete: authedQuery
@@ -98,7 +121,16 @@ export const customerRouter = createRouter({
       const customer = await findCustomerById(input.id);
       if (!customer) return { success: true };
       await requireOrganizationRole(ctx.user.id, customer.organizationId, ["owner", "admin", "manager"]);
-      await deleteCustomer(input.id);
+      await deleteCustomer(input.id, customer.organizationId);
+      await createActivity({
+        organizationId: customer.organizationId,
+        actorId: ctx.user.id,
+        actorType: "user",
+        entityType: "customer",
+        entityId: input.id,
+        action: "Customer deleted",
+        description: `Customer ${customer.firstName} ${customer.lastName} deleted`,
+      });
       return { success: true };
     }),
 });

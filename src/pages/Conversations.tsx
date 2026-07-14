@@ -13,7 +13,6 @@ import {
   Plus,
   AlertCircle,
   Bot,
-  Zap,
   ArrowRight,
   Mail,
 } from "lucide-react";
@@ -155,7 +154,7 @@ export default function Conversations() {
           <div className="flex items-center justify-between">
             <h1 className="text-xl font-extrabold text-zinc-950">Messages</h1>
             <Badge className="bg-zinc-100 hover:bg-zinc-200 text-zinc-600 border-none font-bold text-[10px] py-1 px-2.5 rounded-full shadow-none shrink-0">
-              {conversations?.length ?? 24} Total
+              {conversations?.length ?? 0} Total
             </Badge>
           </div>
 
@@ -213,7 +212,7 @@ export default function Conversations() {
                   ? `${contact.firstName} ${contact.lastName}`
                   : "Unknown Customer";
                 
-                const isUnread = (conv.unreadCount ?? 0) > 0 || conv.status === "open";
+                const isUnread = (conv.unreadCount ?? 0) > 0;
 
                 return (
                   <div
@@ -347,11 +346,7 @@ export default function Conversations() {
 
         {/* Floating Utilities */}
         <div className="absolute bottom-6 right-6 flex items-center gap-3">
-          <button className="bg-white hover:bg-zinc-50 border border-zinc-200 shadow-sm text-indigo-600 px-4 py-2 text-xs font-bold rounded-full flex items-center gap-1.5 transition-all active:scale-[0.98]">
-            <Zap className="w-3.5 h-3.5 text-indigo-500" />
-            AI Insights
-          </button>
-          <button 
+          <button
             onClick={() => {
               setDialogError(null);
               setNewFirstName("");

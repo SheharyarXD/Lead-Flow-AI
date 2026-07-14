@@ -54,8 +54,19 @@ export async function createConversation(data: InferInsertModel<typeof conversat
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function updateConversation(id: number, data: any) {
-  await getDb().update(conversations).set({ ...data, updatedAt: new Date() }).where(eq(conversations.id, id));
+export async function updateConversation(id: number, organizationId: number, data: any) {
+  await getDb()
+    .update(conversations)
+    .set({ ...data, updatedAt: new Date() })
+    .where(and(eq(conversations.id, id), eq(conversations.organizationId, organizationId)));
+  return findConversationById(id);
+}
+
+export async function markConversationRead(id: number, organizationId: number) {
+  await getDb()
+    .update(conversations)
+    .set({ unreadCount: 0, updatedAt: new Date() })
+    .where(and(eq(conversations.id, id), eq(conversations.organizationId, organizationId)));
   return findConversationById(id);
 }
 
@@ -141,9 +152,15 @@ export async function getConversationStats(organizationId: number) {
     .from(conversations)
     .where(and(eq(conversations.organizationId, organizationId), eq(conversations.aiHandled, true)));
 
+  const unread = await getDb()
+    .select({ sum: sql<number>`COALESCE(SUM(${conversations.unreadCount}), 0)` })
+    .from(conversations)
+    .where(eq(conversations.organizationId, organizationId));
+
   return {
     total: total[0].count,
     open: open[0].count,
     aiHandled: aiHandled[0].count,
+    unread: Number(unread[0].sum),
   };
 }

@@ -1,4 +1,5 @@
 import { useParams, useNavigate } from "react-router";
+import { toast } from "sonner";
 import { trpc } from "@/providers/trpc";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,6 +12,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useState, useEffect } from "react";
 import {
   ArrowLeft,
@@ -18,11 +35,17 @@ import {
   Phone,
   MessageSquare,
   CheckSquare,
-  Clock,
   Calendar,
   MoreHorizontal,
   User,
+  Trash2,
+  Briefcase,
+  Tag as TagIcon,
+  DollarSign,
 } from "lucide-react";
+
+const formatCurrency = (value?: number | null) =>
+  value == null ? "—" : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(value);
 
 export default function LeadDetail() {
   const { id } = useParams<{ id: string }>();
@@ -30,16 +53,30 @@ export default function LeadDetail() {
   const leadId = parseInt(id || "0");
 
   const { data: lead, isLoading } = trpc.lead.getById.useQuery({ id: leadId });
+  const { data: members } = trpc.organization.members.useQuery(
+    { organizationId: lead?.organizationId ?? 0 },
+    { enabled: !!lead?.organizationId }
+  );
   const utils = trpc.useUtils();
 
   const updateMutation = trpc.lead.update.useMutation({
     onSuccess: () => {
       utils.lead.getById.invalidate({ id: leadId });
     },
+    onError: (err) => toast.error(err.message || "Failed to update lead"),
+  });
+
+  const deleteMutation = trpc.lead.delete.useMutation({
+    onSuccess: () => {
+      toast.success("Lead deleted");
+      navigate("/leads");
+    },
+    onError: (err) => toast.error(err.message || "Failed to delete lead"),
   });
 
   const [notesText, setNotesText] = useState("");
   const [tagsList, setTagsList] = useState<string[]>([]);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   useEffect(() => {
     if (lead) {
@@ -103,8 +140,8 @@ export default function LeadDetail() {
     }
   };
 
-  // Determine lead qualification metrics dynamically based on database properties
-  const getLeadTag = (lead: any) => {
+  // Derived label from real fields only — no fabricated data.
+  const getLeadTag = (lead: { estimatedValue?: number | null; company?: string | null; source?: string | null; status: string; priority?: string | null }) => {
     if (lead.estimatedValue && lead.estimatedValue >= 5000) return "HIGH VALUE";
     if (lead.company && (lead.company.toLowerCase().includes("llc") || lead.company.toLowerCase().includes("corp") || lead.company.toLowerCase().includes("co"))) return "CORPORATE";
     if (lead.source === "ai_chat" || lead.source === "website_form") return "INQUIRY";
@@ -112,88 +149,12 @@ export default function LeadDetail() {
     return "CONSUMER";
   };
 
-  const getUpcomingAppointment = (lead: any) => {
-    if (lead.id === 3) {
-      return {
-        time: "10:00 AM",
-        date: "OCT 22, 2026",
-        title: "Teeth Whitening Consultation",
-        location: "Office - Room 1",
-      };
-    }
-    if (lead.id === 4) {
-      return {
-        time: "2:00 PM",
-        date: "OCT 22, 2026",
-        title: "Emergency Exam",
-        location: "Office - Room 2",
-      };
-    }
-    if (lead.id === 5) {
-      return {
-        time: "9:00 AM",
-        date: "OCT 23, 2026",
-        title: "Regular Cleaning",
-        location: "Office - Room 1",
-      };
-    }
-    return {
-      time: "2:30 PM",
-      date: "OCT 24, 2026",
-      title: "Demo Call",
-      location: "https://zoom.us/j/1234567890",
-    };
-  };
-
-  const getAiScore = (leadId: number) => {
-    if (leadId === 3) return 94;
-    if (leadId === 4) return 88;
-    if (leadId === 1) return 62;
-    if (leadId === 10) return 91;
-    if (leadId === 6) return 12;
-    return (leadId * 17) % 40 + 55;
-  };
-
-  const getCompanySize = (lead: any) => {
-    if (lead.company) return `${(lead.id * 15) % 150 + 20}-${(lead.id * 15) % 150 + 100} employees`;
-    return "1-10 employees";
-  };
-
-  const getEstimatedBudget = (lead: any) => {
-    if (lead.estimatedValue) {
-      const min = Math.max(0, lead.estimatedValue - 1000);
-      const max = lead.estimatedValue + 2000;
-      return `$${min.toLocaleString()} - $${max.toLocaleString()}/mo`;
-    }
-    return "$1,000 - $3,000/mo";
-  };
-
-  const getTimelineValue = (lead: any) => {
-    if (lead.priority === "urgent") return "Within 7 days";
-    if (lead.priority === "high") return "Within 30 days";
-    return "30 - 60 days";
-  };
-
-  const getDecisionMakerText = (lead: any) => {
-    if (lead.title && (lead.title.toLowerCase().includes("ceo") || lead.title.toLowerCase().includes("owner") || lead.title.toLowerCase().includes("director") || lead.title.toLowerCase().includes("manager"))) {
-      return `Yes (${lead.title})`;
-    }
-    return "Inquire";
-  };
-
-  const getServiceNeededText = (lead: any) => {
-    if (lead.source === "ai_call") return "Inbound Call Automation";
-    if (lead.source === "ai_chat") return "AI Chat Assist";
-    return "General Consultation";
-  };
-
-  const getPainPointText = (lead: any) => {
-    if (lead.priority === "urgent" || lead.priority === "high") return "Missed after-hours calls";
-    return "Slow manual responses";
-  };
+  const upcomingAppointment = (lead.appointments ?? [])
+    .filter((a) => new Date(a.startTime).getTime() >= Date.now())
+    .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())[0] ?? null;
 
   // Compile all activities chronologically
-  const timelineEvents = [];
+  const timelineEvents: Array<{ id: string; type: string; title: string; description: string; date: Date; badge: string }> = [];
 
   if (lead.createdAt) {
     timelineEvents.push({
@@ -207,7 +168,7 @@ export default function LeadDetail() {
   }
 
   if (lead.calls) {
-    lead.calls.forEach((call: any) => {
+    lead.calls.forEach((call) => {
       timelineEvents.push({
         id: `call-${call.id}`,
         type: "call",
@@ -220,7 +181,7 @@ export default function LeadDetail() {
   }
 
   if (lead.conversations) {
-    lead.conversations.forEach((conv: any) => {
+    lead.conversations.forEach((conv) => {
       timelineEvents.push({
         id: `conv-${conv.id}`,
         type: "conversation",
@@ -233,7 +194,7 @@ export default function LeadDetail() {
   }
 
   if (lead.tasks) {
-    lead.tasks.forEach((task: any) => {
+    lead.tasks.forEach((task) => {
       timelineEvents.push({
         id: `task-${task.id}`,
         type: "task",
@@ -241,6 +202,19 @@ export default function LeadDetail() {
         description: task.description || `Assigned task: ${task.title}. Priority: ${task.priority}. Status: ${task.status}.`,
         date: new Date(task.createdAt || lead.createdAt),
         badge: task.status === "completed" ? "Completed" : "Pending",
+      });
+    });
+  }
+
+  if (lead.appointments) {
+    lead.appointments.forEach((appt) => {
+      timelineEvents.push({
+        id: `appt-${appt.id}`,
+        type: "appointment",
+        title: `Appointment: ${appt.title}`,
+        description: appt.description || `Scheduled for ${new Date(appt.startTime).toLocaleString()}. Status: ${appt.status}.`,
+        date: new Date(appt.createdAt || lead.createdAt),
+        badge: appt.status,
       });
     });
   }
@@ -272,12 +246,9 @@ export default function LeadDetail() {
     });
   };
 
-  const score = getAiScore(lead.id);
-  const apptInfo = getUpcomingAppointment(lead);
-
   return (
     <div className="p-8 space-y-8 max-w-[1400px] mx-auto bg-[#fcfcfd] min-h-full select-none">
-      
+
       {/* Back button */}
       <div className="flex items-center">
         <Button variant="ghost" onClick={() => navigate("/leads")} className="text-zinc-500 hover:text-zinc-950 hover:bg-zinc-100 rounded-lg text-xs font-semibold px-3 h-8 shadow-none">
@@ -289,7 +260,6 @@ export default function LeadDetail() {
       <Card className="bg-white border-zinc-200/80 shadow-sm rounded-xl p-6">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
           <div className="flex items-center gap-5">
-            {/* Avatar circle with photo placeholder */}
             <div className="relative">
               <div className="w-20 h-20 rounded-full border border-zinc-200 bg-zinc-50 flex items-center justify-center font-extrabold text-zinc-600 text-2xl shadow-sm relative overflow-hidden select-none">
                 {initials}
@@ -310,15 +280,12 @@ export default function LeadDetail() {
                 </Badge>
               </div>
 
-              <div className="flex items-center flex-wrap gap-x-4 gap-y-1.5 text-xs text-zinc-500 font-semibold">
-                <span className="flex items-center gap-1">
-                  📍 Austin, TX
-                </span>
-                <span className="w-1 h-1 bg-zinc-300 rounded-full" />
-                <span className="flex items-center gap-1 text-indigo-650 font-bold">
-                  ⚡ AI Score: {score}
-                </span>
-              </div>
+              {lead.company && (
+                <div className="flex items-center gap-1.5 text-xs text-zinc-500 font-semibold">
+                  <Briefcase className="w-3.5 h-3.5 text-zinc-400" />
+                  <span>{lead.title ? `${lead.title} at ` : ""}{lead.company}</span>
+                </div>
+              )}
 
               <div className="flex items-center flex-wrap gap-x-4 gap-y-1.5 text-xs text-zinc-500 font-semibold pt-1 border-t border-zinc-100">
                 <span className="flex items-center gap-1.5">
@@ -357,51 +324,54 @@ export default function LeadDetail() {
               <MessageSquare className="w-3.5 h-3.5" />
               Send SMS
             </Button>
-            
-            <button className="text-zinc-400 hover:text-zinc-900 transition-colors p-2.5 border border-zinc-200 rounded-lg bg-white shadow-sm hover:bg-zinc-50">
-              <MoreHorizontal className="w-4 h-4" />
-            </button>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="text-zinc-400 hover:text-zinc-900 transition-colors p-2.5 border border-zinc-200 rounded-lg bg-white shadow-sm hover:bg-zinc-50">
+                  <MoreHorizontal className="w-4 h-4" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem variant="destructive" onClick={() => setDeleteOpen(true)}>
+                  <Trash2 className="w-3.5 h-3.5 mr-2" /> Delete Lead
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </Card>
 
       {/* Main Grid Section */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
-        {/* Left Column (AI Results & Activity Timeline) */}
+
+        {/* Left Column (Lead Details & Activity Timeline) */}
         <div className="lg:col-span-2 space-y-8">
-          
-          {/* AI Results card */}
+
+          {/* Lead Details card — real fields only */}
           <Card className="bg-white border-zinc-200/80 shadow-sm rounded-xl p-6">
             <div className="flex items-center justify-between pb-5 border-b border-zinc-100">
               <div className="flex items-center gap-2">
-                <span className="text-lg">🛡️</span>
-                <span className="text-base font-extrabold text-zinc-950">AI Qualification Results</span>
+                <Briefcase className="w-4 h-4 text-zinc-500" />
+                <span className="text-base font-extrabold text-zinc-950">Lead Details</span>
               </div>
-              <button 
-                onClick={() => utils.lead.getById.invalidate({ id: leadId })}
-                className="text-[11px] font-bold text-indigo-650 hover:underline hover:text-indigo-700 uppercase tracking-wider"
-              >
-                Re-Analyze
-              </button>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6">
               {[
-                { label: "Company Size", value: getCompanySize(lead), icon: "👥" },
-                { label: "Est. Budget", value: getEstimatedBudget(lead), icon: "💰" },
-                { label: "Timeline", value: getTimelineValue(lead), icon: "⏱️" },
-                { label: "Decision Maker", value: getDecisionMakerText(lead), icon: "👤" },
-                { label: "Service Needed", value: getServiceNeededText(lead), icon: "⚙️" },
-                { label: "Pain Point", value: getPainPointText(lead), icon: "⚠️" },
-              ].map((item, i) => (
-                <div key={i} className="border border-zinc-100 rounded-xl p-4 bg-zinc-50/20 flex gap-3 items-start">
-                  <span className="text-lg shrink-0 mt-0.5">{item.icon}</span>
+                { label: "Source", value: lead.source ? lead.source.replace(/_/g, " ") : "—", icon: <TagIcon className="w-4 h-4" /> },
+                { label: "Priority", value: lead.priority ?? "—", icon: <TagIcon className="w-4 h-4" /> },
+                { label: "Estimated Value", value: formatCurrency(lead.estimatedValue), icon: <DollarSign className="w-4 h-4" /> },
+                { label: "Company", value: lead.company || "—", icon: <Briefcase className="w-4 h-4" /> },
+                { label: "Title", value: lead.title || "—", icon: <User className="w-4 h-4" /> },
+                { label: "Created", value: new Date(lead.createdAt).toLocaleDateString("en-US", { dateStyle: "medium" }), icon: <Calendar className="w-4 h-4" /> },
+              ].map((item) => (
+                <div key={item.label} className="border border-zinc-100 rounded-xl p-4 bg-zinc-50/20 flex gap-3 items-start">
+                  <span className="text-zinc-400 shrink-0 mt-0.5">{item.icon}</span>
                   <div className="space-y-1">
                     <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
                       {item.label}
                     </span>
-                    <span className="text-xs font-bold text-zinc-900 block leading-tight">
+                    <span className="text-xs font-bold text-zinc-900 block leading-tight capitalize">
                       {item.value}
                     </span>
                   </div>
@@ -417,7 +387,7 @@ export default function LeadDetail() {
                 <span className="text-lg">💬</span>
                 <span className="text-base font-extrabold text-zinc-950">Activity Timeline</span>
               </div>
-              <button 
+              <button
                 onClick={() => navigate("/conversations")}
                 className="text-[11px] font-bold text-zinc-500 hover:text-zinc-950 hover:underline uppercase tracking-wider border border-zinc-200 px-3 py-1.5 rounded-lg bg-zinc-50/50"
               >
@@ -431,7 +401,6 @@ export default function LeadDetail() {
 
                 return (
                   <div key={event.id} className="flex gap-4 relative group">
-                    {/* Continuous vertical timeline connector */}
                     {index < timelineEvents.length - 1 && (
                       <div className="absolute left-[15px] top-8 bottom-0 w-[2px] bg-zinc-100 group-hover:bg-zinc-200 transition-colors" />
                     )}
@@ -442,6 +411,8 @@ export default function LeadDetail() {
                         <MessageSquare className="w-3.5 h-3.5" />
                       ) : event.type === "task" ? (
                         <CheckSquare className="w-3.5 h-3.5" />
+                      ) : event.type === "appointment" ? (
+                        <Calendar className="w-3.5 h-3.5" />
                       ) : (
                         <User className="w-3.5 h-3.5" />
                       )}
@@ -455,13 +426,13 @@ export default function LeadDetail() {
                           {relativeTime}
                         </span>
                       </div>
-                      
+
                       <p className="text-xs text-zinc-500 mt-1.5 leading-relaxed font-medium">
                         {event.description}
                       </p>
 
                       <div className="flex items-center gap-1.5 mt-2">
-                        <Badge variant="secondary" className="text-[9px] font-bold bg-zinc-150/40 hover:bg-zinc-150 text-zinc-650 border border-zinc-200 shadow-none py-0.5 rounded">
+                        <Badge variant="secondary" className="text-[9px] font-bold bg-zinc-150/40 hover:bg-zinc-150 text-zinc-650 border border-zinc-200 shadow-none py-0.5 rounded capitalize">
                           {event.badge}
                         </Badge>
                       </div>
@@ -481,39 +452,48 @@ export default function LeadDetail() {
 
         {/* Right Column (Upcoming Appointments & Organization Meta) */}
         <div className="space-y-8">
-          
-          {/* Upcoming Appointment card */}
+
+          {/* Upcoming Appointment card — real data, or an honest empty state */}
           <Card className="bg-[#f5f6ff] border border-indigo-100/50 shadow-sm rounded-xl p-5">
             <CardContent className="p-0">
               <div className="flex items-center gap-2 pb-3 mb-3 border-b border-indigo-100/30">
                 <Calendar className="w-4 h-4 text-indigo-500 shrink-0" />
                 <span className="text-[9px] font-bold text-indigo-400 tracking-wider uppercase block">Upcoming Appointment</span>
               </div>
-              <div className="flex justify-between items-start pb-4">
-                <div>
-                  <span className="text-2xl font-extrabold text-indigo-950 block">{apptInfo.time}</span>
-                </div>
-                <span className="text-[10px] font-extrabold text-indigo-650 mt-1 uppercase tracking-wider">{apptInfo.date}</span>
-              </div>
 
-              <div className="mt-4 bg-white border border-indigo-100/50 rounded-xl p-3.5 flex gap-3 items-center shadow-xs">
-                <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-650 shrink-0">
-                  <Clock className="w-4 h-4" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <span className="text-xs font-bold text-zinc-950 block truncate">{apptInfo.title}</span>
-                  <span className="text-[10px] text-zinc-400 font-semibold block truncate mt-0.5">{apptInfo.location}</span>
-                </div>
-              </div>
+              {upcomingAppointment ? (
+                <>
+                  <div className="flex justify-between items-start pb-4">
+                    <span className="text-2xl font-extrabold text-indigo-950 block">
+                      {new Date(upcomingAppointment.startTime).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                    </span>
+                    <span className="text-[10px] font-extrabold text-indigo-650 mt-1 uppercase tracking-wider">
+                      {new Date(upcomingAppointment.startTime).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                    </span>
+                  </div>
 
-              <div className="grid grid-cols-2 gap-2 mt-4">
-                <Button variant="outline" className="h-9 text-xs font-bold text-indigo-600 border-indigo-100 hover:bg-indigo-50/50 bg-white rounded-lg shadow-none">
-                  RESCHEDULE
-                </Button>
-                <Button variant="outline" onClick={() => navigate("/calendar")} className="h-9 text-xs font-bold text-indigo-600 border-indigo-100 hover:bg-indigo-50/50 bg-white rounded-lg shadow-none">
-                  CALENDAR
-                </Button>
-              </div>
+                  <div className="mt-4 bg-white border border-indigo-100/50 rounded-xl p-3.5 flex gap-3 items-center shadow-xs">
+                    <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-650 shrink-0">
+                      <Calendar className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <span className="text-xs font-bold text-zinc-950 block truncate">{upcomingAppointment.title}</span>
+                      <span className="text-[10px] text-zinc-400 font-semibold block truncate mt-0.5">{upcomingAppointment.location || "No location set"}</span>
+                    </div>
+                  </div>
+
+                  <Button variant="outline" onClick={() => navigate("/calendar")} className="w-full h-9 text-xs font-bold text-indigo-600 border-indigo-100 hover:bg-indigo-50/50 bg-white rounded-lg shadow-none mt-4">
+                    MANAGE IN CALENDAR
+                  </Button>
+                </>
+              ) : (
+                <div className="py-2 space-y-3">
+                  <p className="text-xs text-indigo-900/70 font-semibold">No upcoming appointment scheduled for this lead.</p>
+                  <Button variant="outline" onClick={() => navigate("/calendar")} className="w-full h-9 text-xs font-bold text-indigo-600 border-indigo-100 hover:bg-indigo-50/50 bg-white rounded-lg shadow-none">
+                    SCHEDULE IN CALENDAR
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -525,11 +505,11 @@ export default function LeadDetail() {
             </div>
 
             <div className="space-y-4">
-              {/* Assigned To dropdown */}
+              {/* Assigned To dropdown — real org members */}
               <div className="space-y-1.5 px-5 pt-4">
                 <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block select-none">Assigned To</span>
-                <Select 
-                  value={lead.assignedTo?.toString() || ""} 
+                <Select
+                  value={lead.assignedTo?.toString() || ""}
                   onValueChange={(val) => {
                     updateMutation.mutate({
                       id: leadId,
@@ -538,14 +518,12 @@ export default function LeadDetail() {
                   }}
                 >
                   <SelectTrigger className="w-full bg-white border-zinc-200 text-xs font-semibold text-zinc-700 h-10 rounded-lg shadow-none">
-                    <SelectValue placeholder={lead.assignedUser?.name || "Sarah Miller"} />
+                    <SelectValue placeholder="Unassigned" />
                   </SelectTrigger>
                   <SelectContent className="bg-white border-zinc-200">
-                    <SelectItem value="1">Sarah Miller</SelectItem>
-                    <SelectItem value="2">Alex Rivera</SelectItem>
-                    {lead.assignedUser && lead.assignedTo && lead.assignedTo !== 1 && lead.assignedTo !== 2 && (
-                      <SelectItem value={lead.assignedTo.toString()}>{lead.assignedUser.name}</SelectItem>
-                    )}
+                    {members?.map((m) => (
+                      <SelectItem key={m.user!.id} value={String(m.user!.id)}>{m.user?.name || m.user?.email}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -559,7 +537,7 @@ export default function LeadDetail() {
                       {tag}
                     </Badge>
                   ))}
-                  <Button 
+                  <Button
                     variant="outline"
                     onClick={() => {
                       const tag = prompt("Enter new tag:");
@@ -582,7 +560,7 @@ export default function LeadDetail() {
                   className="w-full h-24 p-3 bg-zinc-50/50 border border-zinc-200 text-xs rounded-lg placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-400 focus:border-zinc-400 transition-all resize-none font-medium"
                 />
                 <div className="flex justify-end select-none">
-                  <Button 
+                  <Button
                     onClick={handleSaveNotes}
                     disabled={updateMutation.isPending || notesText === (lead?.notes || "")}
                     className="bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-extrabold h-7 px-3 rounded shadow-none uppercase tracking-wider transition-colors"
@@ -598,6 +576,23 @@ export default function LeadDetail() {
         </div>
 
       </div>
+
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this lead?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {lead.firstName} {lead.lastName} will be permanently removed. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => deleteMutation.mutate({ id: leadId })} className="bg-red-600 hover:bg-red-700">
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
     </div>
   );

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { toast } from "sonner";
 import { trpc } from "@/providers/trpc";
 import { useOrganization } from "@/hooks/useOrganization";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -17,6 +18,22 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -30,7 +47,22 @@ import {
   Plus,
   Calendar,
   User,
+  MoreVertical,
+  Pencil,
+  Trash2,
 } from "lucide-react";
+
+type TaskRow = {
+  id: number;
+  title: string;
+  description?: string | null;
+  type?: string | null;
+  priority?: string | null;
+  status: string;
+  dueDate?: string | Date | null;
+  assignedTo?: number | null;
+  customerId?: number | null;
+};
 
 const priorityConfig: Record<string, { color: string; dot: string }> = {
   urgent: { color: "text-red-600 bg-red-50 border-red-200", dot: "bg-red-500" },
@@ -51,9 +83,11 @@ const typeIcons: Record<string, string> = {
 
 export default function Tasks() {
   const { organizationId } = useOrganization();
-  const [statusFilter, setStatusFilter] = useState("");
-  const [priorityFilter, setPriorityFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [priorityFilter, setPriorityFilter] = useState("all");
   const [addOpen, setAddOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<TaskRow | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<TaskRow | null>(null);
 
   const [newTask, setNewTask] = useState({
     title: "",
@@ -64,10 +98,19 @@ export default function Tasks() {
     customerId: "none",
   });
 
+  const [editForm, setEditForm] = useState({
+    title: "",
+    description: "",
+    type: "follow_up",
+    priority: "medium",
+    status: "pending",
+    dueDate: "",
+  });
+
   const { data: tasks, isLoading } = trpc.task.list.useQuery({
     organizationId: organizationId!,
-    status: statusFilter || undefined,
-    priority: priorityFilter || undefined,
+    status: statusFilter !== "all" ? statusFilter : undefined,
+    priority: priorityFilter !== "all" ? priorityFilter : undefined,
     limit: 50,
   }, { enabled: !!organizationId });
 
@@ -84,6 +127,7 @@ export default function Tasks() {
       utils.task.list.invalidate();
       utils.task.stats.invalidate();
     },
+    onError: (err) => toast.error(err.message || "Failed to update task"),
   });
 
   const createTask = trpc.task.create.useMutation({
@@ -91,6 +135,7 @@ export default function Tasks() {
       utils.task.list.invalidate();
       utils.task.stats.invalidate();
       setAddOpen(false);
+      toast.success("Task created");
       setNewTask({
         title: "",
         description: "",
@@ -99,6 +144,20 @@ export default function Tasks() {
         dueDate: "",
         customerId: "none",
       });
+    },
+    onError: (err) => toast.error(err.message || "Failed to create task"),
+  });
+
+  const deleteTask = trpc.task.delete.useMutation({
+    onSuccess: () => {
+      utils.task.list.invalidate();
+      utils.task.stats.invalidate();
+      toast.success("Task deleted");
+      setDeleteTarget(null);
+    },
+    onError: (err) => {
+      toast.error(err.message || "Failed to delete task");
+      setDeleteTarget(null);
     },
   });
 
@@ -117,6 +176,33 @@ export default function Tasks() {
       dueDate: newTask.dueDate ? new Date(newTask.dueDate) : undefined,
       customerId: newTask.customerId && newTask.customerId !== "none" ? parseInt(newTask.customerId) : undefined,
     });
+  };
+
+  const openEdit = (task: TaskRow) => {
+    setEditingTask(task);
+    setEditForm({
+      title: task.title,
+      description: task.description || "",
+      type: task.type || "follow_up",
+      priority: task.priority || "medium",
+      status: task.status,
+      dueDate: task.dueDate ? new Date(task.dueDate).toISOString().slice(0, 10) : "",
+    });
+  };
+
+  const handleSaveEdit = () => {
+    if (!editingTask || !editForm.title.trim()) return;
+    updateTask.mutate(
+      {
+        id: editingTask.id,
+        title: editForm.title,
+        description: editForm.description || undefined,
+        priority: editForm.priority,
+        status: editForm.status,
+        dueDate: editForm.dueDate ? new Date(editForm.dueDate) : undefined,
+      },
+      { onSuccess: () => setEditingTask(null) }
+    );
   };
 
   const groupedTasks = {
@@ -292,9 +378,9 @@ export default function Tasks() {
               </SelectContent>
             </Select>
 
-            <Button 
-              variant="outline" 
-              onClick={() => { setStatusFilter(""); setPriorityFilter(""); }}
+            <Button
+              variant="outline"
+              onClick={() => { setStatusFilter("all"); setPriorityFilter("all"); }}
               className="text-zinc-700 border-zinc-200 h-9 px-4 rounded-lg text-xs font-semibold hover:bg-zinc-50 flex items-center gap-1.5 shadow-none ml-auto sm:ml-0"
             >
               Reset Filters
@@ -334,7 +420,24 @@ export default function Tasks() {
                       onCheckedChange={() => handleComplete(task.id)}
                     />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-extrabold text-zinc-950 leading-snug">{task.title}</p>
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-sm font-extrabold text-zinc-950 leading-snug">{task.title}</p>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button className="text-zinc-400 hover:text-zinc-900 transition-colors p-0.5 shrink-0">
+                              <MoreVertical className="w-3.5 h-3.5" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => openEdit(task)}>
+                              <Pencil className="w-3.5 h-3.5 mr-2" /> Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem variant="destructive" onClick={() => setDeleteTarget(task)}>
+                              <Trash2 className="w-3.5 h-3.5 mr-2" /> Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                       {task.description && (
                         <p className="text-xs text-zinc-500 mt-1 leading-relaxed font-semibold">{task.description}</p>
                       )}
@@ -387,7 +490,12 @@ export default function Tasks() {
                   <div key={task.id} className="flex items-start gap-3.5 p-4 rounded-xl border border-zinc-150 opacity-60 bg-zinc-50/20">
                     <CheckSquare className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-extrabold text-zinc-950 line-through leading-snug">{task.title}</p>
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-sm font-extrabold text-zinc-950 line-through leading-snug">{task.title}</p>
+                        <button onClick={() => setDeleteTarget(task)} className="text-zinc-400 hover:text-red-600 transition-colors p-0.5 shrink-0">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                       <div className="flex items-center gap-2 mt-2 select-none text-[9px] font-bold text-zinc-400">
                         <span>
                           Completed {task.completedAt ? new Date(task.completedAt).toLocaleDateString() : ""}
@@ -401,6 +509,92 @@ export default function Tasks() {
           </ScrollArea>
         </Card>
       </div>
+
+      {/* Edit Task Dialog */}
+      <Dialog open={!!editingTask} onOpenChange={(open) => !open && setEditingTask(null)}>
+        <DialogContent className="max-w-lg bg-white rounded-xl border border-zinc-200 shadow-lg text-xs font-medium text-zinc-700">
+          <DialogHeader>
+            <DialogTitle className="text-zinc-950 font-bold text-lg">Edit Task</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-4">
+            <div className="space-y-2">
+              <Label className="text-zinc-655 font-bold">Title *</Label>
+              <Input
+                value={editForm.title}
+                onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+                className="bg-zinc-50 border-zinc-200 text-xs rounded-lg shadow-none"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-zinc-655 font-bold">Description</Label>
+              <textarea
+                value={editForm.description}
+                onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                className="w-full h-20 p-2.5 bg-zinc-50 border border-zinc-200 text-xs rounded-lg resize-none focus:outline-none focus:ring-1 focus:ring-zinc-400 focus:border-zinc-400"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-zinc-655 font-bold">Status</Label>
+                <Select value={editForm.status} onValueChange={(v) => setEditForm({ ...editForm, status: v })}>
+                  <SelectTrigger className="bg-zinc-50 border-zinc-200 text-xs rounded-lg shadow-none"><SelectValue /></SelectTrigger>
+                  <SelectContent className="bg-white border-zinc-200">
+                    <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem value="in_progress">In Progress</SelectItem>
+                    <SelectItem value="completed">Completed</SelectItem>
+                    <SelectItem value="cancelled">Cancelled</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-zinc-655 font-bold">Priority</Label>
+                <Select value={editForm.priority} onValueChange={(v) => setEditForm({ ...editForm, priority: v })}>
+                  <SelectTrigger className="bg-zinc-50 border-zinc-200 text-xs rounded-lg shadow-none"><SelectValue /></SelectTrigger>
+                  <SelectContent className="bg-white border-zinc-200">
+                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="urgent">Urgent</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-zinc-655 font-bold">Due Date</Label>
+              <Input
+                type="date"
+                value={editForm.dueDate}
+                onChange={(e) => setEditForm({ ...editForm, dueDate: e.target.value })}
+                className="bg-zinc-50 border-zinc-200 text-xs rounded-lg shadow-none"
+              />
+            </div>
+            <Button
+              onClick={handleSaveEdit}
+              disabled={updateTask.isPending || !editForm.title.trim()}
+              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-10 rounded-lg shadow-sm mt-2"
+            >
+              {updateTask.isPending ? "Saving..." : "Save Changes"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this task?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget && `"${deleteTarget.title}" will be permanently removed. This cannot be undone.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => deleteTarget && deleteTask.mutate({ id: deleteTarget.id })} className="bg-red-600 hover:bg-red-700">
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
     </div>
   );

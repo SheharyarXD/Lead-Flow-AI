@@ -20,7 +20,6 @@ import {
   Clock,
   Mic,
   Calendar,
-  MoreVertical,
   Play,
 } from "lucide-react";
 
@@ -47,7 +46,7 @@ export default function Calls() {
   };
 
   const formatCallTimestamp = (dateInput?: Date | string | null) => {
-    if (!dateInput) return "Today 10:45 AM";
+    if (!dateInput) return "—";
     const date = typeof dateInput === "string" ? new Date(dateInput) : dateInput;
     const isToday = new Date().toDateString() === date.toDateString();
     
@@ -63,7 +62,7 @@ export default function Calls() {
     return `${date.toLocaleDateString([], { month: "short", day: "numeric" })} ${timeStr}`;
   };
 
-  const getAiOutcome = (call: any) => {
+  const getAiOutcome = (call: { status: string; aiHandled?: boolean | null; aiSummary?: string | null }) => {
     if (call.status === "missed") {
       return { label: "No AI Interaction", className: "bg-zinc-50 border-zinc-200 text-zinc-500" };
     }
@@ -200,9 +199,9 @@ export default function Calls() {
         <Card className="bg-white border-zinc-200/80 shadow-sm rounded-xl p-5">
           <CardContent className="p-0 flex items-center justify-between">
             <div className="space-y-1.5">
-              <span className="text-xs font-semibold text-zinc-500">Total Calls (Today)</span>
-              <p className="text-3xl font-extrabold text-zinc-950 tracking-tight">{totalCallsCount || 42}</p>
-              <span className="text-[10px] font-bold text-zinc-400 block pt-0.5">+12% from yesterday</span>
+              <span className="text-xs font-semibold text-zinc-500">Total Calls</span>
+              <p className="text-3xl font-extrabold text-zinc-950 tracking-tight">{totalCallsCount}</p>
+              <span className="text-[10px] font-bold text-zinc-400 block pt-0.5">{missedCallsCount} missed</span>
             </div>
             <div className="w-10 h-10 rounded-full bg-indigo-50 border border-indigo-100/50 flex items-center justify-center text-indigo-600 shrink-0">
               <Phone className="w-4 h-4" />
@@ -216,7 +215,7 @@ export default function Calls() {
             <div className="space-y-1.5">
               <span className="text-xs font-semibold text-zinc-500">AI Handled Rate</span>
               <p className="text-3xl font-extrabold text-zinc-950 tracking-tight">{aiHandledRate}%</p>
-              <span className="text-[10px] font-bold text-zinc-400 block pt-0.5">2% efficiency increase</span>
+              <span className="text-[10px] font-bold text-zinc-400 block pt-0.5">{aiHandledCount} of {calls?.length ?? 0} calls</span>
             </div>
             <div className="w-10 h-10 rounded-full bg-indigo-50 border border-indigo-100/50 flex items-center justify-center text-indigo-600 shrink-0">
               <Mic className="w-4 h-4" />
@@ -377,22 +376,19 @@ export default function Calls() {
 
                     {/* Actions column with play triggers */}
                     <div className="col-span-1 flex items-center justify-end pr-2 text-zinc-400">
-                      <button 
-                        disabled={!call.recordingUrl} 
+                      <button
+                        disabled={!call.recordingUrl}
                         onClick={(e) => {
                           e.stopPropagation();
-                          alert(`Streaming call recording: ${call.recordingUrl}`);
+                          if (call.recordingUrl) window.open(call.recordingUrl, "_blank");
                         }}
                         className={`p-2 rounded-full border transition-all ${
-                          call.recordingUrl 
-                            ? "border-indigo-200 text-indigo-650 bg-indigo-50/30 hover:bg-indigo-50 hover:scale-[1.05]" 
+                          call.recordingUrl
+                            ? "border-indigo-200 text-indigo-650 bg-indigo-50/30 hover:bg-indigo-50 hover:scale-[1.05]"
                             : "border-zinc-100 text-zinc-300 bg-zinc-50 cursor-not-allowed"
                         }`}
                       >
                         <Play className="w-3.5 h-3.5 fill-current" />
-                      </button>
-                      <button className="hover:text-zinc-900 transition-colors p-1.5 ml-1">
-                        <MoreVertical className="w-3.5 h-3.5" />
                       </button>
                     </div>
 
@@ -404,7 +400,7 @@ export default function Calls() {
 
           {/* Footer Pagination Controls */}
           <div className="p-4 border-t border-zinc-100 flex items-center justify-between text-xs font-semibold text-zinc-400 select-none">
-            <span>Showing 1 to {filteredCalls?.length ?? 0} of {totalCallsCount || 42} call logs</span>
+            <span>Showing 1 to {filteredCalls?.length ?? 0} of {totalCallsCount} call logs</span>
             <div className="flex gap-1.5">
               <Button variant="outline" className="h-8 px-3 rounded-lg text-zinc-700 border-zinc-200 hover:bg-zinc-50 font-bold shadow-none" disabled>
                 Previous

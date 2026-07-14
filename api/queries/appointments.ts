@@ -53,13 +53,16 @@ export async function createAppointment(data: InferInsertModel<typeof appointmen
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function updateAppointment(id: number, data: any) {
-  await getDb().update(appointments).set({ ...data, updatedAt: new Date() }).where(eq(appointments.id, id));
+export async function updateAppointment(id: number, organizationId: number, data: any) {
+  await getDb()
+    .update(appointments)
+    .set({ ...data, updatedAt: new Date() })
+    .where(and(eq(appointments.id, id), eq(appointments.organizationId, organizationId)));
   return findAppointmentById(id);
 }
 
-export async function deleteAppointment(id: number) {
-  await getDb().delete(appointments).where(eq(appointments.id, id));
+export async function deleteAppointment(id: number, organizationId: number) {
+  await getDb().delete(appointments).where(and(eq(appointments.id, id), eq(appointments.organizationId, organizationId)));
 }
 
 export async function getAppointmentStats(organizationId: number) {

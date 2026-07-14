@@ -48,8 +48,8 @@ export async function createCall(data: InferInsertModel<typeof calls>) {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function updateCall(id: number, data: any) {
-  await getDb().update(calls).set(data).where(eq(calls.id, id));
+export async function updateCall(id: number, organizationId: number, data: any) {
+  await getDb().update(calls).set(data).where(and(eq(calls.id, id), eq(calls.organizationId, organizationId)));
   return findCallById(id);
 }
 

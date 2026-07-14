@@ -5,7 +5,7 @@ import {
   findActivitiesByOrganization,
   createActivity,
 } from "./queries/activities";
-import { requireOrganizationMembership, requireOrganizationRole } from "./queries/organizations";
+import { requireOnboardedOrganizationMembership as requireOrganizationMembership, requireOnboardedOrganizationRole as requireOrganizationRole } from "./queries/organizations";
 
 export const activityRouter = createRouter({
   list: authedQuery

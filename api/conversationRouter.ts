@@ -8,10 +8,12 @@ import {
   findConversationById,
   createConversation,
   updateConversation,
+  markConversationRead,
   createMessage,
   getConversationStats,
 } from "./queries/conversations";
-import { requireOrganizationMembership, requireOrganizationRole } from "./queries/organizations";
+import { requireOnboardedOrganizationMembership as requireOrganizationMembership, requireOnboardedOrganizationRole as requireOrganizationRole } from "./queries/organizations";
+import { createActivity } from "./queries/activities";
 
 export const conversationRouter = createRouter({
   list: authedQuery
@@ -98,7 +100,16 @@ export const conversationRouter = createRouter({
       const conversation = await findConversationById(id);
       if (!conversation) return null;
       await requireOrganizationRole(ctx.user.id, conversation.organizationId, ["owner", "admin", "manager", "member"]);
-      return updateConversation(id, data as Record<string, unknown>);
+      return updateConversation(id, conversation.organizationId, data as Record<string, unknown>);
+    }),
+
+  markRead: authedQuery
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      const conversation = await findConversationById(input.id);
+      if (!conversation) return null;
+      await requireOrganizationMembership(ctx.user.id, conversation.organizationId);
+      return markConversationRead(input.id, conversation.organizationId);
     }),
 
   sendMessage: authedQuery
@@ -117,7 +128,17 @@ export const conversationRouter = createRouter({
       await requireOrganizationRole(ctx.user.id, conversation.organizationId, ["owner", "admin", "manager", "member"]);
       if (input.senderType !== "agent" || input.senderId !== undefined) throw new Error("Invalid message sender");
       input.senderId = ctx.user.id;
-      return createMessage(input);
+      const message = await createMessage(input);
+      await createActivity({
+        organizationId: conversation.organizationId,
+        actorId: ctx.user.id,
+        actorType: "user",
+        entityType: "conversation",
+        entityId: conversation.id,
+        action: input.isInternalNote ? "Internal note added" : "Message sent",
+        description: input.isInternalNote ? "An internal note was added to the conversation" : `Reply sent via ${conversation.channel}`,
+      });
+      return message;
     }),
 
   stats: authedQuery

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import { trpc } from "@/providers/trpc";
 import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,6 +13,8 @@ import { Loader2, PhoneCall } from "lucide-react";
 export default function Login() {
   const { user, isLoading: isAuthLoading } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const redirectTo = searchParams.get("redirect") || "/";
   const utils = trpc.useUtils();
 
   const [activeTab, setActiveTab] = useState<"login" | "signup">("login");
@@ -33,14 +35,14 @@ export default function Login() {
   // Redirection if already authenticated
   useEffect(() => {
     if (!isAuthLoading && user) {
-      navigate("/");
+      navigate(redirectTo);
     }
-  }, [user, isAuthLoading, navigate]);
+  }, [user, isAuthLoading, navigate, redirectTo]);
 
   const loginMutation = trpc.auth.login.useMutation({
     onSuccess: async () => {
       await utils.auth.me.invalidate();
-      navigate("/");
+      navigate(redirectTo);
     },
     onError: (err) => {
       setError(err.message || "Invalid email or password");
@@ -64,8 +66,8 @@ export default function Login() {
   const forgotMutation = trpc.auth.forgotPassword.useMutation({
     onSuccess: (data) => {
       setSuccessMessage("Instructions sent. If in development mode, please copy the reset token below.");
-      if (data && (data as any).resetToken) {
-        setResetToken((data as any).resetToken);
+      if (data && "resetToken" in data && data.resetToken) {
+        setResetToken(data.resetToken);
       }
       setShowForgot("reset");
       setError(null);
