@@ -81,14 +81,25 @@ export async function createMessage(data: InferInsertModel<typeof messages>) {
         where: eq(conversations.id, data.conversationId),
         with: {
           customer: true,
+          organization: true,
         },
       });
 
       if (conv) {
         if (conv.channel === "sms" && conv.customer?.phone) {
-          dispatchResult = await sendSMS(conv.customer.phone, data.content);
+          dispatchResult = await sendSMS(conv.customer.phone, data.content, {
+            accountSid: conv.organization?.twilioAccountSid,
+            authToken: conv.organization?.twilioAuthToken,
+            phoneNumber: conv.organization?.twilioPhoneNumber,
+          });
         } else if (conv.channel === "email" && conv.customer?.email) {
-          dispatchResult = await sendEmail(conv.customer.email, conv.subject || "Message from LeadFlow AI", data.content);
+          dispatchResult = await sendEmail(conv.customer.email, conv.subject || "Message from LeadFlow AI", data.content, {
+            host: conv.organization?.smtpHost,
+            port: conv.organization?.smtpPort,
+            user: conv.organization?.smtpUser,
+            pass: conv.organization?.smtpPass,
+            fromEmail: conv.organization?.smtpFromEmail,
+          });
         }
       }
     } catch (error) {

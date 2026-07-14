@@ -24,8 +24,6 @@ import {
   Key,
   Save,
   CreditCard,
-  Calendar,
-  Phone,
 } from "lucide-react";
 
 export default function Settings() {
@@ -80,6 +78,23 @@ export default function Settings() {
     });
   };
 
+  const [twilioForm, setTwilioForm] = useState({
+    accountSid: "",
+    authToken: "",
+    phoneNumber: "",
+  });
+
+  const [smtpForm, setSmtpForm] = useState({
+    host: "",
+    port: 587,
+    user: "",
+    pass: "",
+    fromEmail: "",
+  });
+
+  const [saveTwilioSuccess, setSaveTwilioSuccess] = useState(false);
+  const [saveSmtpSuccess, setSaveSmtpSuccess] = useState(false);
+
   const [businessForm, setBusinessForm] = useState({
     name: "",
     industry: "",
@@ -116,6 +131,18 @@ export default function Settings() {
         aiInstructions: org.aiInstructions || "",
         openaiApiKey: (org as any).openaiApiKey || "",
       });
+      setTwilioForm({
+        accountSid: (org as any).twilioAccountSid || "",
+        authToken: (org as any).twilioAuthToken || "",
+        phoneNumber: (org as any).twilioPhoneNumber || "",
+      });
+      setSmtpForm({
+        host: (org as any).smtpHost || "",
+        port: (org as any).smtpPort || 587,
+        user: (org as any).smtpUser || "",
+        pass: (org as any).smtpPass || "",
+        fromEmail: (org as any).smtpFromEmail || "",
+      });
     }
   }, [org]);
 
@@ -124,6 +151,36 @@ export default function Settings() {
       if (organizationId) utils.organization.getById.invalidate({ id: organizationId });
     },
   });
+
+  const handleSaveTwilio = () => {
+    updateOrg.mutate({
+      id: organizationId!,
+      twilioAccountSid: twilioForm.accountSid.trim() || null,
+      twilioAuthToken: twilioForm.authToken.trim() || null,
+      twilioPhoneNumber: twilioForm.phoneNumber.trim() || null,
+    }, {
+      onSuccess: () => {
+        setSaveTwilioSuccess(true);
+        setTimeout(() => setSaveTwilioSuccess(false), 3000);
+      }
+    });
+  };
+
+  const handleSaveSmtp = () => {
+    updateOrg.mutate({
+      id: organizationId!,
+      smtpHost: smtpForm.host.trim() || null,
+      smtpPort: smtpForm.port,
+      smtpUser: smtpForm.user.trim() || null,
+      smtpPass: smtpForm.pass.trim() || null,
+      smtpFromEmail: smtpForm.fromEmail.trim() || null,
+    }, {
+      onSuccess: () => {
+        setSaveSmtpSuccess(true);
+        setTimeout(() => setSaveSmtpSuccess(false), 3000);
+      }
+    });
+  };
 
   const handleSaveBusiness = () => {
     updateOrg.mutate({
@@ -492,34 +549,116 @@ export default function Settings() {
         </TabsContent>
 
         {/* Integrations */}
-        <TabsContent value="integrations" className="space-y-4">
+        <TabsContent value="integrations" className="space-y-6">
+          
+          {/* Twilio SMS settings card */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Connected Services</CardTitle>
-              <CardDescription>Integrate with your existing tools and services.</CardDescription>
+              <CardTitle className="text-base">Twilio SMS Configuration</CardTitle>
+              <CardDescription>Enter your Twilio API credentials to send SMS messages from your own business number.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3">
-              {[
-                { name: "Twilio", desc: "Phone numbers & SMS", status: "coming_soon", icon: Phone },
-                { name: "OpenAI", desc: "AI voice & chat processing", status: "coming_soon", icon: Bot },
-                { name: "Google Calendar", desc: "Sync appointments", status: "coming_soon", icon: Calendar },
-                { name: "Stripe", desc: "Payment processing", status: "coming_soon", icon: CreditCard },
-                { name: "Slack", desc: "Team notifications", status: "coming_soon", icon: Link2 },
-                { name: "Zapier", desc: "Workflow automation", status: "coming_soon", icon: Link2 },
-              ].map((integration) => (
-                <div key={integration.name} className="flex items-center justify-between p-4 rounded-lg border hover:bg-muted/50 transition-colors">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center">
-                      <integration.icon className="w-5 h-5 text-muted-foreground" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium">{integration.name}</p>
-                      <p className="text-xs text-muted-foreground">{integration.desc}</p>
-                    </div>
-                  </div>
-                  <Badge variant="secondary" className="text-[10px]">Coming Soon</Badge>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2 text-left">
+                  <Label>Twilio Account SID</Label>
+                  <Input 
+                    placeholder="AC..." 
+                    value={twilioForm.accountSid} 
+                    onChange={(e) => setTwilioForm({ ...twilioForm, accountSid: e.target.value })} 
+                    className="bg-white border-zinc-200 text-xs shadow-none h-9"
+                  />
                 </div>
-              ))}
+                <div className="space-y-2 text-left">
+                  <Label>Twilio Auth Token</Label>
+                  <Input 
+                    placeholder="Auth Token" 
+                    type="password" 
+                    value={twilioForm.authToken} 
+                    onChange={(e) => setTwilioForm({ ...twilioForm, authToken: e.target.value })} 
+                    className="bg-white border-zinc-200 text-xs shadow-none h-9"
+                  />
+                </div>
+                <div className="space-y-2 text-left sm:col-span-2">
+                  <Label>Twilio Phone Number (Sender)</Label>
+                  <Input 
+                    placeholder="e.g. +15551234567" 
+                    value={twilioForm.phoneNumber} 
+                    onChange={(e) => setTwilioForm({ ...twilioForm, phoneNumber: e.target.value })} 
+                    className="bg-white border-zinc-200 text-xs shadow-none h-9"
+                  />
+                </div>
+              </div>
+              <div className="text-left pt-2">
+                <Button onClick={handleSaveTwilio} disabled={updateOrg.isPending} className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-sm h-9 px-4">
+                  <Save className="w-4 h-4 mr-2" />
+                  {updateOrg.isPending ? "Saving..." : saveTwilioSuccess ? "Saved Twilio Settings!" : "Save Twilio Settings"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* SMTP Email settings card */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">SMTP Email Configuration</CardTitle>
+              <CardDescription>Configure your outgoing SMTP server credentials to send emails from your own domain.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="space-y-2 text-left sm:col-span-2">
+                  <Label>SMTP Host</Label>
+                  <Input 
+                    placeholder="e.g. smtp.mailgun.org" 
+                    value={smtpForm.host} 
+                    onChange={(e) => setSmtpForm({ ...smtpForm, host: e.target.value })} 
+                    className="bg-white border-zinc-200 text-xs shadow-none h-9"
+                  />
+                </div>
+                <div className="space-y-2 text-left">
+                  <Label>SMTP Port</Label>
+                  <Input 
+                    placeholder="587" 
+                    type="number" 
+                    value={smtpForm.port} 
+                    onChange={(e) => setSmtpForm({ ...smtpForm, port: parseInt(e.target.value) || 587 })} 
+                    className="bg-white border-zinc-200 text-xs shadow-none h-9"
+                  />
+                </div>
+                <div className="space-y-2 text-left sm:col-span-2">
+                  <Label>SMTP Username</Label>
+                  <Input 
+                    placeholder="username" 
+                    value={smtpForm.user} 
+                    onChange={(e) => setSmtpForm({ ...smtpForm, user: e.target.value })} 
+                    className="bg-white border-zinc-200 text-xs shadow-none h-9"
+                  />
+                </div>
+                <div className="space-y-2 text-left">
+                  <Label>SMTP Password</Label>
+                  <Input 
+                    placeholder="Password" 
+                    type="password" 
+                    value={smtpForm.pass} 
+                    onChange={(e) => setSmtpForm({ ...smtpForm, pass: e.target.value })} 
+                    className="bg-white border-zinc-200 text-xs shadow-none h-9"
+                  />
+                </div>
+                <div className="space-y-2 text-left sm:col-span-3">
+                  <Label>Sender Email Address (From)</Label>
+                  <Input 
+                    placeholder="e.g. notifications@yourdomain.com" 
+                    value={smtpForm.fromEmail} 
+                    onChange={(e) => setSmtpForm({ ...smtpForm, fromEmail: e.target.value })} 
+                    className="bg-white border-zinc-200 text-xs shadow-none h-9"
+                  />
+                </div>
+              </div>
+              <div className="text-left pt-2">
+                <Button onClick={handleSaveSmtp} disabled={updateOrg.isPending} className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-sm h-9 px-4">
+                  <Save className="w-4 h-4 mr-2" />
+                  {updateOrg.isPending ? "Saving..." : saveSmtpSuccess ? "Saved SMTP Settings!" : "Save Email Settings"}
+                </Button>
+              </div>
             </CardContent>
           </Card>
 

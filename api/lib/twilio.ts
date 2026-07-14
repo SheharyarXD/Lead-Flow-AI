@@ -1,28 +1,28 @@
 import twilio from "twilio";
 
-const accountSid = process.env.TWILIO_ACCOUNT_SID;
-const authToken = process.env.TWILIO_AUTH_TOKEN;
-const fromPhone = process.env.TWILIO_PHONE_NUMBER;
+export async function sendSMS(
+  to: string, 
+  body: string, 
+  credentials?: { 
+    accountSid?: string | null; 
+    authToken?: string | null; 
+    phoneNumber?: string | null; 
+  }
+) {
+  const sid = credentials?.accountSid || process.env.TWILIO_ACCOUNT_SID;
+  const token = credentials?.authToken || process.env.TWILIO_AUTH_TOKEN;
+  const from = credentials?.phoneNumber || process.env.TWILIO_PHONE_NUMBER;
 
-let twilioClient: twilio.Twilio | null = null;
-
-if (accountSid && authToken) {
-  twilioClient = twilio(accountSid, authToken);
-  console.log("Twilio SMS Client initialized successfully.");
-} else {
-  console.warn("WARNING: Twilio credentials (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN) are missing. SMS sending will be simulated.");
-}
-
-export async function sendSMS(to: string, body: string) {
-  if (!twilioClient || !fromPhone) {
+  if (!sid || !token || !from) {
     console.warn(`SMS not sent: Twilio is not configured (development mode). Recipient: ${to}`);
     return { sid: null, status: "development_not_sent" as const };
   }
 
   try {
-    const message = await twilioClient.messages.create({
+    const client = twilio(sid, token);
+    const message = await client.messages.create({
       body,
-      from: fromPhone,
+      from,
       to,
     });
     console.log(`SMS sent successfully to ${to}. Message SID: ${message.sid}`);

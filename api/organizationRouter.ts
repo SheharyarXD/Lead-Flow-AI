@@ -99,6 +99,14 @@ export const organizationRouter = createRouter({
         aiInstructions: z.string().optional(),
         greetingMessage: z.string().optional(),
         openaiApiKey: z.string().nullable().optional(),
+        twilioAccountSid: z.string().nullable().optional(),
+        twilioAuthToken: z.string().nullable().optional(),
+        twilioPhoneNumber: z.string().nullable().optional(),
+        smtpHost: z.string().nullable().optional(),
+        smtpPort: z.number().nullable().optional(),
+        smtpUser: z.string().nullable().optional(),
+        smtpPass: z.string().nullable().optional(),
+        smtpFromEmail: z.string().nullable().optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {

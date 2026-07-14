@@ -49,6 +49,16 @@ async function main() {
   // 5. Add openaiApiKey column to organizations
   await runSql("ALTER TABLE organizations ADD COLUMN openaiApiKey text DEFAULT NULL;");
 
+  // 6. Add Twilio and SMTP settings columns to organizations
+  await runSql("ALTER TABLE organizations ADD COLUMN twilioAccountSid text DEFAULT NULL;");
+  await runSql("ALTER TABLE organizations ADD COLUMN twilioAuthToken text DEFAULT NULL;");
+  await runSql("ALTER TABLE organizations ADD COLUMN twilioPhoneNumber varchar(50) DEFAULT NULL;");
+  await runSql("ALTER TABLE organizations ADD COLUMN smtpHost varchar(255) DEFAULT NULL;");
+  await runSql("ALTER TABLE organizations ADD COLUMN smtpPort int DEFAULT NULL;");
+  await runSql("ALTER TABLE organizations ADD COLUMN smtpUser varchar(255) DEFAULT NULL;");
+  await runSql("ALTER TABLE organizations ADD COLUMN smtpPass text DEFAULT NULL;");
+  await runSql("ALTER TABLE organizations ADD COLUMN smtpFromEmail varchar(255) DEFAULT NULL;");
+
   console.log("Database repair completed successfully!");
   await connection.end();
   process.exit(0);
