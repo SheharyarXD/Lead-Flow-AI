@@ -22,21 +22,69 @@ export async function triggerAIAutoReply(conversationId: number, userMessage: st
     where: eq(knowledgeBase.organizationId, conv.organizationId),
   });
 
-  // 4. Simple matching rules based on user keywords
+  // 4. OpenAI Chat Completion with custom key support or rules fallback
   let responseText = "";
   const msgLower = userMessage.toLowerCase();
 
-  for (const kb of kbEntries) {
-    if (kb.title && msgLower.includes(kb.title.toLowerCase())) {
-      responseText = kb.content;
-      break;
+  const apiKey = org?.openaiApiKey || process.env.OPENAI_API_KEY;
+  if (apiKey) {
+    try {
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [
+            {
+              role: "system",
+              content: `You are an AI receptionist for the business "${org?.name}". 
+Industry: ${org?.industry || "Services"}
+Instructions: ${org?.aiInstructions || "Be polite, helpful, and answer based on the knowledge base."}
+Greeting: ${org?.greetingMessage || "Hello!"}
+
+Here is the knowledge base information you have access to:
+${kbEntries.map((kb, i) => `${i+1}. [${kb.category || "FAQ"}] ${kb.title}: ${kb.content}`).join("\n")}
+
+Rule: Answer the customer's query accurately using the knowledge base facts. If the answer is not in the knowledge base, politely state that you've logged their query and a human representative will get back to them.`
+            },
+            {
+              role: "user",
+              content: userMessage
+            }
+          ],
+          temperature: 0.7,
+          max_tokens: 250
+        })
+      });
+
+      if (response.ok) {
+        const completion = await response.json() as any;
+        responseText = completion.choices?.[0]?.message?.content?.trim() || "";
+      } else {
+        console.warn("OpenAI API returned non-ok status:", response.status);
+      }
+    } catch (err) {
+      console.error("OpenAI API call failed, falling back to rules:", err);
     }
-    if (kb.category && msgLower.includes(kb.category.toLowerCase())) {
-      responseText = kb.content;
-      break;
-    }
-    if (kb.content && msgLower.split(" ").some(word => word.length > 3 && kb.content.toLowerCase().includes(word))) {
-      responseText = kb.content;
+  }
+
+  // If OpenAI was not configured or failed, use local matching rules
+  if (!responseText) {
+    for (const kb of kbEntries) {
+      if (kb.title && msgLower.includes(kb.title.toLowerCase())) {
+        responseText = kb.content;
+        break;
+      }
+      if (kb.category && msgLower.includes(kb.category.toLowerCase())) {
+        responseText = kb.content;
+        break;
+      }
+      if (kb.content && msgLower.split(" ").some(word => word.length > 3 && kb.content.toLowerCase().includes(word))) {
+        responseText = kb.content;
+      }
     }
   }
 

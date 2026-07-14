@@ -93,6 +93,7 @@ export default function Settings() {
     aiEnabled: true,
     greetingMessage: "",
     aiInstructions: "",
+    openaiApiKey: "",
   });
 
   const [saveBusinessSuccess, setSaveBusinessSuccess] = useState(false);
@@ -113,6 +114,7 @@ export default function Settings() {
         aiEnabled: org.aiEnabled ?? true,
         greetingMessage: org.greetingMessage || "",
         aiInstructions: org.aiInstructions || "",
+        openaiApiKey: (org as any).openaiApiKey || "",
       });
     }
   }, [org]);
@@ -145,6 +147,7 @@ export default function Settings() {
       aiEnabled: aiForm.aiEnabled,
       greetingMessage: aiForm.greetingMessage,
       aiInstructions: aiForm.aiInstructions,
+      openaiApiKey: aiForm.openaiApiKey.trim() || null,
     }, {
       onSuccess: () => {
         setSaveAiSuccess(true);
@@ -316,18 +319,27 @@ export default function Settings() {
               <div className="p-4 rounded-lg bg-amber-50 border border-amber-200">
                 <h4 className="text-sm font-medium text-amber-900 mb-2 flex items-center gap-2">
                   <Key className="w-4 h-4" />
-                  AI Provider Settings (Coming Soon)
+                  AI Provider Settings
                 </h4>
                 <div className="space-y-3">
-                  <div className="space-y-2">
+                  <div className="space-y-2 text-left">
                     <Label className="text-amber-800">OpenAI API Key</Label>
-                    <Input placeholder="sk-..." type="password" disabled className="bg-white/50" />
+                    <Input 
+                      placeholder="sk-..." 
+                      type="password" 
+                      value={aiForm.openaiApiKey}
+                      onChange={(e) => setAiForm({ ...aiForm, openaiApiKey: e.target.value })}
+                      className="bg-white border-amber-200 focus-visible:ring-amber-400 text-xs shadow-none"
+                    />
+                    <p className="text-[10px] text-amber-700 leading-normal">
+                      Entering your API key allows your business to run custom GPT responses. Leave blank to use server fallback.
+                    </p>
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-2 text-left">
                     <Label className="text-amber-800">Voice Provider</Label>
-                    <Input value="OpenAI Realtime API" disabled className="bg-white/50" />
+                    <Input value="OpenAI Realtime API" disabled className="bg-white/50 text-xs" />
                   </div>
-                  <p className="text-xs text-amber-700">
+                  <p className="text-xs text-amber-700 leading-normal">
                     Configure your AI voice provider to enable AI calls. Support for Twilio, Vapi, and Bland coming soon.
                   </p>
                 </div>

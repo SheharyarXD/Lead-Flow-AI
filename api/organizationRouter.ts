@@ -98,6 +98,7 @@ export const organizationRouter = createRouter({
         aiEnabled: z.boolean().optional(),
         aiInstructions: z.string().optional(),
         greetingMessage: z.string().optional(),
+        openaiApiKey: z.string().nullable().optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {

@@ -46,6 +46,9 @@ async function main() {
     ) ENGINE=InnoDB;
   `);
 
+  // 5. Add openaiApiKey column to organizations
+  await runSql("ALTER TABLE organizations ADD COLUMN openaiApiKey text DEFAULT NULL;");
+
   console.log("Database repair completed successfully!");
   await connection.end();
   process.exit(0);

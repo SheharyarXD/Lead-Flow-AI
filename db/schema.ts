@@ -66,6 +66,7 @@ export const organizations = mysqlTable(
     businessHours: json("businessHours").$type<Record<string, { open: string; close: string }>>(),
     timezone: varchar("timezone", { length: 100 }).default("America/New_York"),
     logo: text("logo"),
+    openaiApiKey: text("openaiApiKey"),
     aiEnabled: boolean("aiEnabled").default(true),
     aiInstructions: text("aiInstructions"),
     greetingMessage: text("greetingMessage"),
