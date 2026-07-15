@@ -34,7 +34,7 @@ function formatZodError(message: string): string {
     if (message.startsWith("[")) {
       const parsed = JSON.parse(message);
       if (Array.isArray(parsed)) {
-        return parsed.map((issue: any) => {
+        return parsed.map((issue: { path?: string[]; message: string }) => {
           const field = issue.path?.join(".") || "Field";
           const fieldFormatted = field.replace(/([A-Z])/g, " $1");
           const fieldCapitalized = fieldFormatted.charAt(0).toUpperCase() + fieldFormatted.slice(1);
@@ -42,7 +42,9 @@ function formatZodError(message: string): string {
         }).join(" | ");
       }
     }
-  } catch (e) {}
+  } catch {
+    // Not a JSON-encoded validation array — fall through and return the raw message.
+  }
   return message;
 }
 
@@ -211,19 +213,24 @@ export default function Settings() {
         aiEnabled: org.aiEnabled ?? true,
         greetingMessage: org.greetingMessage || "",
         aiInstructions: org.aiInstructions || "",
-        openaiApiKey: (org as any).openaiApiKey || "",
+        // The real key is never sent back from the server once saved — only a
+        // hasOpenaiApiKey flag is. The field starts blank; leaving it blank on
+        // save keeps whatever is already configured (see handleSaveAi).
+        openaiApiKey: "",
       });
       setTwilioForm({
-        accountSid: (org as any).twilioAccountSid || "",
-        authToken: (org as any).twilioAuthToken || "",
-        phoneNumber: (org as any).twilioPhoneNumber || "",
+        accountSid: org.twilioAccountSid || "",
+        // Secret — never round-tripped from the server. Blank = unchanged.
+        authToken: "",
+        phoneNumber: org.twilioPhoneNumber || "",
       });
       setSmtpForm({
-        host: (org as any).smtpHost || "",
-        port: (org as any).smtpPort || 587,
-        user: (org as any).smtpUser || "",
-        pass: (org as any).smtpPass || "",
-        fromEmail: (org as any).smtpFromEmail || "",
+        host: org.smtpHost || "",
+        port: org.smtpPort || 587,
+        user: org.smtpUser || "",
+        // Secret — never round-tripped from the server. Blank = unchanged.
+        pass: "",
+        fromEmail: org.smtpFromEmail || "",
       });
       setBusinessHours(
         org.businessHours && Object.keys(org.businessHours).length > 0
@@ -531,9 +538,9 @@ export default function Settings() {
                 <div className="space-y-3">
                   <div className="space-y-2 text-left">
                     <Label className="text-amber-800">OpenAI API Key</Label>
-                    <Input 
-                      placeholder="sk-..." 
-                      type="password" 
+                    <Input
+                      placeholder={org?.hasOpenaiApiKey ? "•••••••••••••••••••• (configured — enter a new key to replace)" : "sk-..."}
+                      type="password"
                       value={aiForm.openaiApiKey}
                       onChange={(e) => setAiForm({ ...aiForm, openaiApiKey: e.target.value })}
                       className="bg-white border-amber-200 focus-visible:ring-amber-400 text-xs shadow-none"
@@ -829,10 +836,10 @@ export default function Settings() {
                 </div>
                 <div className="space-y-2 text-left">
                   <Label>Twilio Auth Token</Label>
-                  <Input 
-                    placeholder="Auth Token" 
-                    type="password" 
-                    value={twilioForm.authToken} 
+                  <Input
+                    placeholder={org?.hasTwilioAuthToken ? "•••••••••••••••••••• (configured — enter a new token to replace)" : "Auth Token"}
+                    type="password"
+                    value={twilioForm.authToken}
                     onChange={(e) => setTwilioForm({ ...twilioForm, authToken: e.target.value })} 
                     className="bg-white border-zinc-200 text-xs shadow-none h-9"
                   />
@@ -899,10 +906,10 @@ export default function Settings() {
                 </div>
                 <div className="space-y-2 text-left">
                   <Label>SMTP Password</Label>
-                  <Input 
-                    placeholder="Password" 
-                    type="password" 
-                    value={smtpForm.pass} 
+                  <Input
+                    placeholder={org?.hasSmtpPassword ? "•••••••••••••••••••• (configured — enter a new password to replace)" : "Password"}
+                    type="password"
+                    value={smtpForm.pass}
                     onChange={(e) => setSmtpForm({ ...smtpForm, pass: e.target.value })} 
                     className="bg-white border-zinc-200 text-xs shadow-none h-9"
                   />

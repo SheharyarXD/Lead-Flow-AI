@@ -9,7 +9,6 @@ import { useNavigate } from "react-router";
 import {
   MessageSquare,
   Search,
-  MoreVertical,
   Plus,
   AlertCircle,
   Bot,
@@ -367,9 +366,6 @@ export default function Conversations() {
         {/* Header */}
         <div className="px-6 py-4 border-b border-zinc-100 flex items-center justify-between shrink-0">
           <span className="text-sm font-extrabold text-zinc-950">Lead Context</span>
-          <button className="text-zinc-400 hover:text-zinc-900 transition-colors p-1 rounded-lg">
-            <MoreVertical className="w-4 h-4" />
-          </button>
         </div>
 
         {/* Silhouette avatar content */}

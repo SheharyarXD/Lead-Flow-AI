@@ -4,6 +4,7 @@ import { eq, and, desc, count, sql } from "drizzle-orm";
 import type { InferInsertModel } from "drizzle-orm";
 import { sendSMS } from "../lib/twilio";
 import { sendEmail } from "../lib/email";
+import { decryptSecret } from "../lib/crypto";
 
 export async function findConversationsByOrganization(organizationId: number, filters?: {
   status?: string;
@@ -100,7 +101,7 @@ export async function createMessage(data: InferInsertModel<typeof messages>) {
         if (conv.channel === "sms" && conv.customer?.phone) {
           dispatchResult = await sendSMS(conv.customer.phone, data.content, {
             accountSid: conv.organization?.twilioAccountSid,
-            authToken: conv.organization?.twilioAuthToken,
+            authToken: conv.organization?.twilioAuthToken ? decryptSecret(conv.organization.twilioAuthToken) : null,
             phoneNumber: conv.organization?.twilioPhoneNumber,
           });
         } else if (conv.channel === "email" && conv.customer?.email) {
@@ -108,7 +109,7 @@ export async function createMessage(data: InferInsertModel<typeof messages>) {
             host: conv.organization?.smtpHost,
             port: conv.organization?.smtpPort,
             user: conv.organization?.smtpUser,
-            pass: conv.organization?.smtpPass,
+            pass: conv.organization?.smtpPass ? decryptSecret(conv.organization.smtpPass) : null,
             fromEmail: conv.organization?.smtpFromEmail,
           });
         }

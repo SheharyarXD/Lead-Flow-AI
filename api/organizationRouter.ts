@@ -26,9 +26,29 @@ import {
   updateInvitation,
   findInvitationsByOrganization,
   findInvitationByTokenHash,
+  sanitizeOrganization,
 } from "./queries/organizations";
 import { findUserByEmail } from "./queries/users";
 import { sendEmail } from "./lib/email";
+import { encryptSecret } from "./lib/crypto";
+
+const SECRET_FIELDS = ["openaiApiKey", "twilioAuthToken", "smtpPass"] as const;
+
+// Encrypts any of the reversible secret fields present in the input, and drops
+// keys the caller didn't actually send (so a blank/omitted field never
+// clobbers a previously-saved credential).
+function prepareOrgUpdate(data: Record<string, unknown>): Record<string, unknown> {
+  const prepared: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (value === undefined) continue;
+    if ((SECRET_FIELDS as readonly string[]).includes(key)) {
+      prepared[key] = value === null || value === "" ? null : encryptSecret(value as string);
+    } else {
+      prepared[key] = value;
+    }
+  }
+  return prepared;
+}
 
 const hashInviteToken = (token: string) => createHash("sha256").update(token).digest("hex");
 
@@ -55,7 +75,8 @@ export const organizationRouter = createRouter({
     .input(z.object({ id: z.number() }))
     .query(async ({ input, ctx }) => {
       await requireOrganizationMembership(ctx.user.id, input.id);
-      return findOrganizationById(input.id);
+      const org = await findOrganizationById(input.id);
+      return org ? sanitizeOrganization(org) : org;
     }),
 
   create: authedQuery
@@ -101,7 +122,7 @@ export const organizationRouter = createRouter({
         });
       }
 
-      return org;
+      return org ? sanitizeOrganization(org) : org;
     }),
 
   update: authedQuery
@@ -133,7 +154,8 @@ export const organizationRouter = createRouter({
     .mutation(async ({ input, ctx }) => {
       const { id, ...data } = input;
       await requireOrganizationRole(ctx.user.id, id, ["owner", "admin", "manager"]);
-      return updateOrganization(id, data as Record<string, unknown>);
+      const updated = await updateOrganization(id, prepareOrgUpdate(data));
+      return updated ? sanitizeOrganization(updated) : updated;
     }),
 
   members: authedQuery
@@ -158,7 +180,8 @@ export const organizationRouter = createRouter({
     .mutation(async ({ input, ctx }) => {
       const { organizationId, ...data } = input;
       await requireOrganizationMembership(ctx.user.id, organizationId);
-      return updateOrganization(organizationId, data);
+      const updated = await updateOrganization(organizationId, data);
+      return updated ? sanitizeOrganization(updated) : updated;
     }),
 
   completeOnboarding: authedQuery
@@ -173,7 +196,7 @@ export const organizationRouter = createRouter({
     }))
     .mutation(async ({ input, ctx }) => {
       await requireOrganizationMembership(ctx.user.id, input.organizationId);
-      return updateOrganization(input.organizationId, {
+      const updated = await updateOrganization(input.organizationId, {
         name: input.name,
         industry: input.industry,
         phone: input.phone,
@@ -182,6 +205,7 @@ export const organizationRouter = createRouter({
         aiInstructions: input.aiInstructions,
         onboardingCompletedAt: new Date(),
       });
+      return updated ? sanitizeOrganization(updated) : updated;
     }),
 
   // ── Team / RBAC management ──────────────────────────────────────────────

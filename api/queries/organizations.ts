@@ -17,6 +17,24 @@ export async function findOrganizationById(id: number) {
   });
 }
 
+// Strips reversible-encrypted secrets (Twilio auth token, SMTP password, OpenAI
+// API key) before an organization row is sent to the client. Callers that need
+// the real value for outbound dispatch (SMS/Email/AI) must read the raw DB row
+// directly and decrypt it server-side — never route it back through the API.
+export function sanitizeOrganization<T extends Record<string, unknown>>(org: T): Omit<T, "openaiApiKey" | "twilioAuthToken" | "smtpPass"> & {
+  hasOpenaiApiKey: boolean;
+  hasTwilioAuthToken: boolean;
+  hasSmtpPassword: boolean;
+} {
+  const { openaiApiKey, twilioAuthToken, smtpPass, ...rest } = org;
+  return {
+    ...rest,
+    hasOpenaiApiKey: !!openaiApiKey,
+    hasTwilioAuthToken: !!twilioAuthToken,
+    hasSmtpPassword: !!smtpPass,
+  };
+}
+
 export async function findOrganizationBySlug(slug: string) {
   return getDb().query.organizations.findFirst({
     where: eq(organizations.slug, slug),
@@ -30,7 +48,7 @@ export async function findUserOrganizations(userId: number) {
       organization: true,
     },
   });
-  return members.map((m) => ({ ...m.organization, memberRole: m.role }));
+  return members.map((m) => ({ ...sanitizeOrganization(m.organization), memberRole: m.role }));
 }
 
 export async function findUserDefaultOrganization(userId: number) {

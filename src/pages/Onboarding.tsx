@@ -26,7 +26,7 @@ function formatZodError(message: string): string {
     if (message.startsWith("[")) {
       const parsed = JSON.parse(message);
       if (Array.isArray(parsed)) {
-        return parsed.map((issue: any) => {
+        return parsed.map((issue: { path?: string[]; message: string }) => {
           const field = issue.path?.join(".") || "Field";
           const fieldFormatted = field.replace(/([A-Z])/g, " $1");
           const fieldCapitalized = fieldFormatted.charAt(0).toUpperCase() + fieldFormatted.slice(1);
@@ -34,7 +34,9 @@ function formatZodError(message: string): string {
         }).join(" | ");
       }
     }
-  } catch (e) {}
+  } catch {
+    // Not a JSON-encoded validation array — fall through and return the raw message.
+  }
   return message;
 }
 

@@ -2,6 +2,7 @@ import { getDb } from "../queries/connection";
 import { knowledgeBase, organizations, conversations, activities, leads } from "@db/schema";
 import { eq } from "drizzle-orm";
 import { createMessage } from "../queries/conversations";
+import { decryptSecret } from "./crypto";
 
 export async function triggerAIAutoReply(conversationId: number, userMessage: string) {
   const db = getDb();
@@ -26,7 +27,7 @@ export async function triggerAIAutoReply(conversationId: number, userMessage: st
   let responseText = "";
   const msgLower = userMessage.toLowerCase();
 
-  const apiKey = org?.openaiApiKey || process.env.OPENAI_API_KEY;
+  const apiKey = (org?.openaiApiKey ? decryptSecret(org.openaiApiKey) : null) || process.env.OPENAI_API_KEY;
   if (apiKey) {
     try {
       const response = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -61,7 +62,7 @@ Rule: Answer the customer's query accurately using the knowledge base facts. If 
       });
 
       if (response.ok) {
-        const completion = await response.json() as any;
+        const completion = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
         responseText = completion.choices?.[0]?.message?.content?.trim() || "";
       } else {
         console.warn("OpenAI API returned non-ok status:", response.status);
