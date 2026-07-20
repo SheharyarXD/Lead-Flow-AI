@@ -85,13 +85,14 @@ export const billingRouter = createRouter({
       z.object({
         organizationId: z.number(),
         plan: z.enum(["starter", "professional", "enterprise"]),
+        originUrl: z.string().optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
       await requireOrganizationRole(ctx.user.id, input.organizationId, ["owner", "admin"]);
       const db = getDb();
 
-      const hostUrl = process.env.PUBLIC_URL || "http://localhost:5173";
+      const hostUrl = input.originUrl || process.env.PUBLIC_URL || "http://localhost:3000";
       const priceId = PLAN_PRICES[input.plan];
 
       if (stripe && stripeSecretKey) {

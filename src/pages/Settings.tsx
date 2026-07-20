@@ -1108,8 +1108,11 @@ export default function Settings() {
                           const res = await checkoutMutation.mutateAsync({
                             organizationId,
                             plan: planItem.id,
+                            originUrl: window.location.origin,
                           });
-                          if (res.url) {
+                          if (res.simulated) {
+                            usageQuery.refetch();
+                          } else if (res.url) {
                             window.location.href = res.url;
                           }
                         }}
