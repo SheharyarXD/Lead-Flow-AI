@@ -64,6 +64,13 @@ export function AttachmentsSection({ leadId, customerId }: AttachmentsSectionPro
           body: file,
         });
         if (!uploadRes.ok) throw new Error("Failed to upload file to storage bucket");
+      } else if (presignedRes.simulated) {
+        // Dev fallback: convert file to a local Data URL so download button works immediately
+        const reader = new FileReader();
+        finalUrl = await new Promise((resolve) => {
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(file);
+        });
       }
 
       setUploadProgress(80);
@@ -185,6 +192,7 @@ export function AttachmentsSection({ leadId, customerId }: AttachmentsSectionPro
                 <div className="flex items-center gap-1.5 shrink-0">
                   <a
                     href={doc.url}
+                    download={doc.fileName}
                     target="_blank"
                     rel="noreferrer"
                     className="p-1.5 text-zinc-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
