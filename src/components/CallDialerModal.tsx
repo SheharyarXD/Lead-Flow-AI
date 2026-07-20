@@ -1,24 +1,43 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { PhoneOff, Mic, MicOff, Volume2, ShieldCheck, User } from "lucide-react";
+import { trpc } from "@/providers/trpc";
 
 interface CallDialerModalProps {
   isOpen: boolean;
   phoneNumber: string;
   contactName?: string;
+  callId?: number | null;
   onClose: () => void;
 }
 
-export function CallDialerModal({ isOpen, phoneNumber, contactName, onClose }: CallDialerModalProps) {
+export function CallDialerModal({ isOpen, phoneNumber, contactName, callId, onClose }: CallDialerModalProps) {
   const [callState, setCallState] = useState<"connecting" | "ringing" | "connected" | "ended">("connecting");
   const [seconds, setSeconds] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
+  const secondsRef = useRef(0);
+  const callIdRef = useRef<number | null>(callId ?? null);
+  const utils = trpc.useUtils();
+
+  useEffect(() => {
+    if (callId) {
+      callIdRef.current = callId;
+    }
+  }, [callId]);
+
+  const updateCallMutation = trpc.calls.update.useMutation({
+    onSuccess: () => {
+      utils.calls.list.invalidate();
+      utils.calls.stats.invalidate();
+    },
+  });
 
   useEffect(() => {
     if (!isOpen) {
       setCallState("connecting");
       setSeconds(0);
+      secondsRef.current = 0;
       setIsMuted(false);
       return;
     }
@@ -36,7 +55,11 @@ export function CallDialerModal({ isOpen, phoneNumber, contactName, onClose }: C
     let interval: NodeJS.Timeout;
     if (callState === "connected") {
       interval = setInterval(() => {
-        setSeconds((prev) => prev + 1);
+        setSeconds((prev) => {
+          const next = prev + 1;
+          secondsRef.current = next;
+          return next;
+        });
       }, 1000);
     }
     return () => clearInterval(interval);
@@ -44,6 +67,17 @@ export function CallDialerModal({ isOpen, phoneNumber, contactName, onClose }: C
 
   const handleEndCall = () => {
     setCallState("ended");
+    const finalDuration = secondsRef.current > 0 ? secondsRef.current : seconds;
+    const targetCallId = callId || callIdRef.current;
+
+    if (targetCallId) {
+      updateCallMutation.mutate({
+        id: targetCallId,
+        status: "completed",
+        duration: finalDuration,
+        notes: `Call completed by agent after ${finalDuration} seconds.`,
+      });
+    }
     setTimeout(() => {
       onClose();
     }, 1000);

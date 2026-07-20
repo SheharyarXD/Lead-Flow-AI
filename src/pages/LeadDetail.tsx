@@ -82,9 +82,13 @@ export default function LeadDetail() {
   const [tagsList, setTagsList] = useState<string[]>([]);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [isCallModalOpen, setIsCallModalOpen] = useState(false);
+  const [activeCallId, setActiveCallId] = useState<number | null>(null);
 
   const initiateCallMutation = trpc.calls.initiateCall.useMutation({
-    onSuccess: () => {
+    onSuccess: (data) => {
+      if (data?.call?.id) {
+        setActiveCallId(data.call.id);
+      }
       utils.calls.list.invalidate();
     },
   });
@@ -622,6 +626,7 @@ export default function LeadDetail() {
         isOpen={isCallModalOpen}
         phoneNumber={lead.phone || "Unknown"}
         contactName={`${lead.firstName} ${lead.lastName}`}
+        callId={activeCallId}
         onClose={() => setIsCallModalOpen(false)}
       />
 
