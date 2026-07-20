@@ -587,3 +587,36 @@ export const activities = mysqlTable(
 
 export type Activity = typeof activities.$inferSelect;
 export type InsertActivity = typeof activities.$inferInsert;
+
+// ─── Documents (file / attachment uploads) ──────────────────────────────
+export const documents = mysqlTable(
+  "documents",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: bigint("organizationId", { mode: "number", unsigned: true })
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    customerId: bigint("customerId", { mode: "number", unsigned: true }).references(() => customers.id, {
+      onDelete: "set null",
+    }),
+    leadId: bigint("leadId", { mode: "number", unsigned: true }).references(() => leads.id, {
+      onDelete: "set null",
+    }),
+    fileName: varchar("fileName", { length: 255 }).notNull(),
+    url: text("url").notNull(),
+    fileSize: int("fileSize"),
+    mimeType: varchar("mimeType", { length: 100 }),
+    uploadedBy: bigint("uploadedBy", { mode: "number", unsigned: true }).references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    orgIdx: index("doc_org_idx").on(table.organizationId),
+    customerIdx: index("doc_customer_idx").on(table.customerId),
+    leadIdx: index("doc_lead_idx").on(table.leadId),
+  })
+);
+
+export type Document = typeof documents.$inferSelect;
+export type InsertDocument = typeof documents.$inferInsert;

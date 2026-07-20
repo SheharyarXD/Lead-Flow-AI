@@ -12,6 +12,8 @@ import { dashboardRouter } from "./dashboardRouter";
 import { activityRouter } from "./activityRouter";
 import { knowledgeBaseRouter } from "./knowledgeBaseRouter";
 import { adminRouter } from "./adminRouter";
+import { documentRouter } from "./documentRouter";
+import { billingRouter } from "./billingRouter";
 
 export const appRouter = createRouter({
   ping: publicQuery.query(() => ({ ok: true, ts: Date.now() })),
@@ -28,6 +30,8 @@ export const appRouter = createRouter({
   activity: activityRouter,
   knowledgeBase: knowledgeBaseRouter,
   admin: adminRouter,
+  document: documentRouter,
+  billing: billingRouter,
 });
 
 export type AppRouter = typeof appRouter;

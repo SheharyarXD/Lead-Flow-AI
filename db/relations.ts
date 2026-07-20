@@ -15,6 +15,7 @@ import {
   subscriptions,
   knowledgeBase,
   activities,
+  documents,
 } from "./schema";
 
 export const usersRelations = relations(users, ({ many }) => ({
@@ -117,4 +118,11 @@ export const knowledgeBaseRelations = relations(knowledgeBase, ({ one }) => ({
 
 export const activitiesRelations = relations(activities, ({ one }) => ({
   organization: one(organizations, { fields: [activities.organizationId], references: [organizations.id] }),
+}));
+
+export const documentsRelations = relations(documents, ({ one }) => ({
+  organization: one(organizations, { fields: [documents.organizationId], references: [organizations.id] }),
+  customer: one(customers, { fields: [documents.customerId], references: [customers.id] }),
+  lead: one(leads, { fields: [documents.leadId], references: [leads.id] }),
+  uploader: one(users, { fields: [documents.uploadedBy], references: [users.id] }),
 }));

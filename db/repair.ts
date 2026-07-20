@@ -59,6 +59,25 @@ async function main() {
   await runSql("ALTER TABLE organizations ADD COLUMN smtpPass text DEFAULT NULL;");
   await runSql("ALTER TABLE organizations ADD COLUMN smtpFromEmail varchar(255) DEFAULT NULL;");
 
+  // 7. Create documents table if not exists
+  await runSql(`
+    CREATE TABLE IF NOT EXISTS documents (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      organizationId BIGINT UNSIGNED NOT NULL,
+      customerId BIGINT UNSIGNED NULL,
+      leadId BIGINT UNSIGNED NULL,
+      fileName VARCHAR(255) NOT NULL,
+      url TEXT NOT NULL,
+      fileSize INT NULL,
+      mimeType VARCHAR(100) NULL,
+      uploadedBy BIGINT UNSIGNED NULL,
+      createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+      INDEX doc_org_idx (organizationId),
+      INDEX doc_customer_idx (customerId),
+      INDEX doc_lead_idx (leadId)
+    ) ENGINE=InnoDB;
+  `);
+
   console.log("Database repair completed successfully!");
   await connection.end();
   process.exit(0);

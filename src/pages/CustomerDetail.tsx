@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { trpc } from "@/providers/trpc";
 import { useOrganization } from "@/hooks/useOrganization";
 import { Card } from "@/components/ui/card";
+import { AttachmentsSection } from "@/components/AttachmentsSection";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -492,6 +493,9 @@ export default function CustomerDetail() {
               )}
             </div>
           </Card>
+
+          {/* Attachments & Documents */}
+          <AttachmentsSection customerId={customerId} />
 
         </div>
 

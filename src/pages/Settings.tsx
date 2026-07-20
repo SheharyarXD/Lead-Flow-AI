@@ -60,6 +60,12 @@ export default function Settings() {
   const myRole = members?.find((m) => m.user?.id === user?.id)?.role;
   const canManageTeam = myRole === "owner" || myRole === "admin";
 
+  const usageQuery = trpc.billing.getUsage.useQuery(
+    { organizationId: organizationId! },
+    { enabled: !!organizationId }
+  );
+  const checkoutMutation = trpc.billing.createCheckoutSession.useMutation();
+
   const { data: invitations } = trpc.organization.listInvitations.useQuery(
     { organizationId: organizationId! },
     { enabled: !!organizationId && canManageTeam }
@@ -960,77 +966,168 @@ export default function Settings() {
         <TabsContent value="billing" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Current Plan</CardTitle>
-              <CardDescription>Your subscription and usage details.</CardDescription>
+              <CardTitle className="text-base">Current Plan & Usage</CardTitle>
+              <CardDescription>Your active subscription tier and quota usage metrics.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between p-4 rounded-lg bg-primary/5 border border-primary/20">
+            <CardContent className="space-y-6">
+              <div className="flex items-center justify-between p-4 rounded-lg bg-indigo-50/50 border border-indigo-150">
                 <div>
-                  <p className="text-lg font-bold text-primary">Professional Plan</p>
-                  <p className="text-sm text-muted-foreground">$297/month billed annually</p>
+                  <p className="text-lg font-bold text-indigo-950 capitalize">{usageQuery.data?.plan || "Starter"} Plan</p>
+                  <p className="text-xs text-indigo-700 font-medium mt-0.5">
+                    Status: <span className="font-extrabold uppercase">{usageQuery.data?.status || "Active"}</span>
+                  </p>
                 </div>
-                <Badge className="text-[10px]">Active</Badge>
+                <Badge className="bg-indigo-600 text-white font-bold text-xs px-3 py-1 capitalize">
+                  {usageQuery.data?.plan || "Starter"}
+                </Badge>
               </div>
 
-              <div className="space-y-3">
+              {/* Real Quotas Usage Progress Gauges */}
+              <div className="space-y-4">
                 <div>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span>AI Call Minutes</span>
-                    <span className="text-muted-foreground">142 / 500 min</span>
+                  <div className="flex justify-between text-xs font-bold mb-1.5">
+                    <span className="text-zinc-700">AI Call Minutes</span>
+                    <span className="text-zinc-500">
+                      {usageQuery.data?.minutesUsed ?? 0} / {usageQuery.data?.minutesLimit ?? 100} min
+                    </span>
                   </div>
-                  <div className="h-2 bg-muted rounded-full overflow-hidden">
-                    <div className="h-full bg-primary rounded-full" style={{ width: "28%" }} />
+                  <div className="h-2 bg-zinc-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-indigo-600 rounded-full transition-all duration-500"
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          ((usageQuery.data?.minutesUsed ?? 0) / (usageQuery.data?.minutesLimit ?? 100)) * 100
+                        )}%`,
+                      }}
+                    />
                   </div>
                 </div>
+
                 <div>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span>Leads</span>
-                    <span className="text-muted-foreground">10 / 500</span>
+                  <div className="flex justify-between text-xs font-bold mb-1.5">
+                    <span className="text-zinc-700">Leads Capacity</span>
+                    <span className="text-zinc-500">
+                      {usageQuery.data?.leadsUsed ?? 0} / {usageQuery.data?.leadsLimit ?? 100}
+                    </span>
                   </div>
-                  <div className="h-2 bg-muted rounded-full overflow-hidden">
-                    <div className="h-full bg-emerald-500 rounded-full" style={{ width: "2%" }} />
+                  <div className="h-2 bg-zinc-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-emerald-500 rounded-full transition-all duration-500"
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          ((usageQuery.data?.leadsUsed ?? 0) / (usageQuery.data?.leadsLimit ?? 100)) * 100
+                        )}%`,
+                      }}
+                    />
                   </div>
                 </div>
+
                 <div>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span>Team Members</span>
-                    <span className="text-muted-foreground">1 / 5</span>
+                  <div className="flex justify-between text-xs font-bold mb-1.5">
+                    <span className="text-zinc-700">Team Members</span>
+                    <span className="text-zinc-500">
+                      {usageQuery.data?.usersUsed ?? 1} / {usageQuery.data?.usersLimit ?? 5}
+                    </span>
                   </div>
-                  <div className="h-2 bg-muted rounded-full overflow-hidden">
-                    <div className="h-full bg-blue-500 rounded-full" style={{ width: "20%" }} />
+                  <div className="h-2 bg-zinc-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-amber-500 rounded-full transition-all duration-500"
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          ((usageQuery.data?.usersUsed ?? 1) / (usageQuery.data?.usersLimit ?? 5)) * 100
+                        )}%`,
+                      }}
+                    />
                   </div>
                 </div>
               </div>
 
               <Separator />
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* Subscription Plan Tiers */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {[
-                  { name: "Starter", price: "$97/mo", features: ["100 min", "100 leads", "2 users"], current: false },
-                  { name: "Professional", price: "$297/mo", features: ["500 min", "500 leads", "5 users", "Priority support"], current: true },
-                  { name: "Enterprise", price: "Custom", features: ["Unlimited", "Unlimited", "Unlimited", "Custom AI training"], current: false },
-                ].map((plan) => (
-                  <div
-                    key={plan.name}
-                    className={`p-4 rounded-lg border ${plan.current ? "border-primary ring-1 ring-primary/20" : ""}`}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-semibold">{plan.name}</span>
-                      {plan.current && <Badge className="text-[10px]">Current</Badge>}
-                    </div>
-                    <p className="text-lg font-bold mb-2">{plan.price}</p>
-                    <ul className="space-y-1">
-                      {plan.features.map((f) => (
-                        <li key={f} className="text-xs text-muted-foreground">{f}</li>
-                      ))}
-                    </ul>
-                    {!plan.current && (
-                      <Button variant="outline" size="sm" className="w-full mt-3" disabled={plan.name === "Enterprise"}>
-                        {plan.name === "Enterprise" ? "Contact Sales" : "Upgrade"}
+                  {
+                    id: "starter" as const,
+                    name: "Starter",
+                    price: "$97/mo",
+                    features: ["100 Call Minutes", "100 Leads", "5 Team Members", "Standard Support"],
+                  },
+                  {
+                    id: "professional" as const,
+                    name: "Professional",
+                    price: "$297/mo",
+                    features: ["1,000 Call Minutes", "1,000 Leads", "20 Team Members", "Priority AI Queue"],
+                  },
+                  {
+                    id: "enterprise" as const,
+                    name: "Enterprise",
+                    price: "$997/mo",
+                    features: ["5,000 Call Minutes", "10,000 Leads", "Unlimited Team", "Custom AI Voice Training"],
+                  },
+                ].map((planItem) => {
+                  const isCurrent = (usageQuery.data?.plan || "starter") === planItem.id;
+                  return (
+                    <div
+                      key={planItem.id}
+                      className={`p-5 rounded-xl border flex flex-col justify-between transition-all ${
+                        isCurrent
+                          ? "border-indigo-600 bg-indigo-50/20 ring-2 ring-indigo-500/20 shadow-sm"
+                          : "border-zinc-200 bg-white hover:border-zinc-300"
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-bold text-zinc-950 text-sm">{planItem.name}</span>
+                          {isCurrent && (
+                            <Badge className="bg-indigo-100 text-indigo-700 hover:bg-indigo-100 text-[10px] font-bold">
+                              Current Plan
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-xl font-extrabold text-zinc-950 mb-3">{planItem.price}</p>
+                        <ul className="space-y-1.5 mb-4">
+                          {planItem.features.map((f) => (
+                            <li key={f} className="text-xs text-zinc-600 flex items-center gap-1.5 font-medium">
+                              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
+                              {f}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+
+                      <Button
+                        variant={isCurrent ? "outline" : "default"}
+                        size="sm"
+                        disabled={isCurrent || checkoutMutation.isPending}
+                        onClick={async () => {
+                          if (!organizationId) return;
+                          const res = await checkoutMutation.mutateAsync({
+                            organizationId,
+                            plan: planItem.id,
+                          });
+                          if (res.url) {
+                            window.location.href = res.url;
+                          }
+                        }}
+                        className={`w-full text-xs font-bold h-9 rounded-lg ${
+                          isCurrent
+                            ? "border-zinc-200 text-zinc-500"
+                            : "bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm"
+                        }`}
+                      >
+                        {isCurrent
+                          ? "Current Plan"
+                          : checkoutMutation.isPending
+                          ? "Redirecting..."
+                          : `Upgrade to ${planItem.name}`}
                       </Button>
-                    )}
-                  </div>
-                ))}
+                    </div>
+                  );
+                })}
               </div>
             </CardContent>
           </Card>

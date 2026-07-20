@@ -20,7 +20,7 @@ app.use("/api/trpc/*", async (c) => {
 
 // ── Inbound Webhooks for SMS & Email ──
 import { getDb } from "./queries/connection";
-import { customers, conversations, activities, organizations } from "@db/schema";
+import { customers, conversations, activities, organizations, subscriptions } from "@db/schema";
 import { eq, and } from "drizzle-orm";
 import { createMessage } from "./queries/conversations";
 import { triggerAIAutoReply } from "./lib/ai-agent";
@@ -141,6 +141,45 @@ app.post("/api/webhooks/sms", async (c) => {
   return c.text("<Response></Response>");
 });
 
+// ── Inbound Voice Webhook ──
+app.post("/api/webhooks/voice", async (c) => {
+  const body = await c.req.parseBody();
+  const callerNumber = (body.From as string) || "";
+  const callSid = (body.CallSid as string) || "";
+
+  console.log(`Inbound Voice call received from ${callerNumber}. CallSid: ${callSid}`);
+
+  c.header("Content-Type", "application/xml");
+  const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say voice="alice">Thank you for calling. Our AI receptionist is taking your call, please leave a message after the tone.</Say>
+    <Record maxLength="60" finishOnKey="#" />
+</Response>`;
+  return c.text(twiml);
+});
+
+// ── Voice Call Status Webhook ──
+app.post("/api/webhooks/voice/status", async (c) => {
+  const body = await c.req.parseBody();
+  const callSid = (body.CallSid as string) || "";
+  const callStatus = (body.CallStatus as string) || "";
+  const duration = parseInt((body.CallDuration as string) || "0");
+
+  console.log(`Voice call status update. CallSid: ${callSid}, Status: ${callStatus}, Duration: ${duration}`);
+  return c.text("OK");
+});
+
+// ── Voice Recording Webhook ──
+app.post("/api/webhooks/voice/recording", async (c) => {
+  const body = await c.req.parseBody();
+  const recordingUrl = (body.RecordingUrl as string) || "";
+  const recordingDuration = parseInt((body.RecordingDuration as string) || "0");
+  const callSid = (body.CallSid as string) || "";
+
+  console.log(`Voice recording completed. CallSid: ${callSid}, URL: ${recordingUrl}, Duration: ${recordingDuration}`);
+  return c.text("OK");
+});
+
 app.post("/api/webhooks/email", async (c) => {
   const db = getDb();
   const body = await c.req.parseBody();
@@ -246,6 +285,53 @@ app.post("/api/webhooks/email", async (c) => {
   }
 
   return c.json({ success: true });
+});
+
+// ── Stripe Billing Webhook ──
+app.post("/api/webhooks/stripe", async (c) => {
+  const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+  if (!stripeSecretKey || !webhookSecret) {
+    return c.json({ success: true, message: "Stripe webhook received (unconfigured test mode)" });
+  }
+
+  const db = getDb();
+  const signature = c.req.header("stripe-signature");
+  const rawBody = await c.req.text();
+
+  try {
+    const Stripe = (await import("stripe")).default;
+    const stripe = new Stripe(stripeSecretKey, { apiVersion: "2025-02-24.acacia" as any });
+    const event = stripe.webhooks.constructEvent(rawBody, signature || "", webhookSecret);
+
+    if (event.type === "checkout.session.completed") {
+      const session = event.data.object as any;
+      const orgId = parseInt(session.metadata?.organizationId || "0");
+      const plan = (session.metadata?.plan || "professional") as "starter" | "professional" | "enterprise";
+
+      if (orgId) {
+        await db
+          .update(subscriptions)
+          .set({
+            plan,
+            status: "active",
+            stripeCustomerId: session.customer as string,
+            stripeSubscriptionId: session.subscription as string,
+            leadsLimit: plan === "enterprise" ? 10000 : plan === "professional" ? 1000 : 100,
+            minutesIncluded: plan === "enterprise" ? 5000 : plan === "professional" ? 1000 : 100,
+          })
+          .where(eq(subscriptions.organizationId, orgId));
+
+        console.log(`Successfully upgraded Organization #${orgId} to ${plan} plan via Stripe Checkout!`);
+      }
+    }
+  } catch (err) {
+    console.error("Error processing Stripe webhook:", err);
+    return c.json({ error: "Webhook verification failed" }, 400);
+  }
+
+  return c.json({ received: true });
 });
 
 app.all("/api/*", (c) => c.json({ error: "Not Found" }, 404));

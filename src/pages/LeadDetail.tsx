@@ -1,7 +1,10 @@
 import { useParams, useNavigate } from "react-router";
 import { toast } from "sonner";
 import { trpc } from "@/providers/trpc";
+import { useOrganization } from "@/hooks/useOrganization";
 import { Card, CardContent } from "@/components/ui/card";
+import { AttachmentsSection } from "@/components/AttachmentsSection";
+import { CallDialerModal } from "@/components/CallDialerModal";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -51,6 +54,7 @@ export default function LeadDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const leadId = parseInt(id || "0");
+  const { organizationId } = useOrganization();
 
   const { data: lead, isLoading } = trpc.lead.getById.useQuery({ id: leadId });
   const { data: members } = trpc.organization.members.useQuery(
@@ -77,6 +81,13 @@ export default function LeadDetail() {
   const [notesText, setNotesText] = useState("");
   const [tagsList, setTagsList] = useState<string[]>([]);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [isCallModalOpen, setIsCallModalOpen] = useState(false);
+
+  const initiateCallMutation = trpc.calls.initiateCall.useMutation({
+    onSuccess: () => {
+      utils.calls.list.invalidate();
+    },
+  });
 
   useEffect(() => {
     if (lead) {
@@ -311,7 +322,17 @@ export default function LeadDetail() {
             </Button>
             <Button
               variant="outline"
-              onClick={() => navigate("/calls")}
+              onClick={() => {
+                setIsCallModalOpen(true);
+                if (lead.phone && organizationId) {
+                  initiateCallMutation.mutate({
+                    organizationId,
+                    phoneNumber: lead.phone,
+                    leadId,
+                    customerId: lead.customerId || undefined,
+                  });
+                }
+              }}
               className="text-zinc-700 border-zinc-200 h-9 px-4 rounded-lg text-xs font-bold hover:bg-zinc-50 flex items-center gap-1.5 shadow-none"
             >
               <Phone className="w-3.5 h-3.5 text-zinc-550" />
@@ -447,6 +468,9 @@ export default function LeadDetail() {
               )}
             </div>
           </Card>
+
+          {/* Attachments & Documents */}
+          <AttachmentsSection leadId={leadId} />
 
         </div>
 
@@ -593,6 +617,13 @@ export default function LeadDetail() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <CallDialerModal
+        isOpen={isCallModalOpen}
+        phoneNumber={lead.phone || "Unknown"}
+        contactName={`${lead.firstName} ${lead.lastName}`}
+        onClose={() => setIsCallModalOpen(false)}
+      />
 
     </div>
   );

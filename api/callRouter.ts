@@ -9,6 +9,7 @@ import {
   getCallStats,
 } from "./queries/calls";
 import { requireOnboardedOrganizationMembership as requireOrganizationMembership, requireOnboardedOrganizationRole as requireOrganizationRole } from "./queries/organizations";
+import { generateTwilioVoiceToken, createTwilioCall } from "./lib/twilio";
 
 export const callRouter = createRouter({
   list: authedQuery
@@ -91,5 +92,49 @@ export const callRouter = createRouter({
     .query(async ({ input, ctx }) => {
       await requireOrganizationMembership(ctx.user.id, input.organizationId);
       return getCallStats(input.organizationId);
+    }),
+
+  generateVoiceToken: authedQuery
+    .input(z.object({ organizationId: z.number() }))
+    .query(async ({ input, ctx }) => {
+      const org = await requireOrganizationMembership(ctx.user.id, input.organizationId);
+      const identity = `user_${ctx.user.id}`;
+      return generateTwilioVoiceToken(identity, {
+        accountSid: (org as any).twilioAccountSid,
+        authToken: (org as any).twilioAuthToken,
+      });
+    }),
+
+  initiateCall: authedQuery
+    .input(
+      z.object({
+        organizationId: z.number(),
+        phoneNumber: z.string(),
+        customerId: z.number().optional(),
+        leadId: z.number().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const org = await requireOrganizationRole(ctx.user.id, input.organizationId, ["owner", "admin", "manager", "member"]);
+
+      const hostUrl = process.env.PUBLIC_URL || "https://app.leadflowai.com";
+      const twilioRes = await createTwilioCall(input.phoneNumber, hostUrl, {
+        accountSid: (org as any).twilioAccountSid,
+        authToken: (org as any).twilioAuthToken,
+        phoneNumber: (org as any).twilioPhoneNumber,
+      });
+
+      const callRecord = await createCall({
+        organizationId: input.organizationId,
+        customerId: input.customerId,
+        leadId: input.leadId,
+        phoneNumber: input.phoneNumber,
+        direction: "outbound",
+        status: "queued",
+        userId: ctx.user.id,
+        startedAt: new Date(),
+      });
+
+      return { call: callRecord, twilioSid: twilioRes.sid };
     }),
 });
