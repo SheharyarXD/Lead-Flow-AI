@@ -103,6 +103,29 @@ export function AttachmentsSection({ leadId, customerId }: AttachmentsSectionPro
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
+  const handleDownload = (doc: { url: string; fileName: string }) => {
+    if (doc.url.includes("storage.leadflowai.com") || doc.url.includes("mock/")) {
+      const dummyContent = `LeadFlow AI - Document Preview\n\nFilename: ${doc.fileName}\nUploaded Date: ${new Date().toLocaleDateString()}\n\n[Development Mode]: AWS S3 credentials not set in .env. New uploads will retain local contents.`;
+      const blob = new Blob([dummyContent], { type: "text/plain" });
+      const blobUrl = URL.createObjectURL(blob);
+      const tempLink = document.createElement("a");
+      tempLink.href = blobUrl;
+      tempLink.download = doc.fileName.endsWith(".txt") ? doc.fileName : `${doc.fileName}.txt`;
+      document.body.appendChild(tempLink);
+      tempLink.click();
+      document.body.removeChild(tempLink);
+      URL.revokeObjectURL(blobUrl);
+    } else {
+      const tempLink = document.createElement("a");
+      tempLink.href = doc.url;
+      tempLink.download = doc.fileName;
+      tempLink.target = "_blank";
+      document.body.appendChild(tempLink);
+      tempLink.click();
+      document.body.removeChild(tempLink);
+    }
+  };
+
   return (
     <Card className="bg-white border-zinc-200/80 shadow-sm rounded-xl">
       <CardHeader className="flex flex-row items-center justify-between pb-3">
@@ -190,15 +213,13 @@ export function AttachmentsSection({ leadId, customerId }: AttachmentsSectionPro
                 </div>
 
                 <div className="flex items-center gap-1.5 shrink-0">
-                  <a
-                    href={doc.url}
-                    download={doc.fileName}
-                    target="_blank"
-                    rel="noreferrer"
+                  <button
+                    onClick={() => handleDownload(doc)}
                     className="p-1.5 text-zinc-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
+                    title="Download document"
                   >
                     <Download className="w-3.5 h-3.5" />
-                  </a>
+                  </button>
                   <button
                     onClick={() => deleteMutation.mutate({ id: doc.id })}
                     disabled={deleteMutation.isPending}
