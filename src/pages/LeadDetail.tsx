@@ -624,10 +624,14 @@ export default function LeadDetail() {
 
       <CallDialerModal
         isOpen={isCallModalOpen}
+        organizationId={lead.organizationId}
         phoneNumber={lead.phone || "Unknown"}
         contactName={`${lead.firstName} ${lead.lastName}`}
         callId={activeCallId}
-        onClose={() => setIsCallModalOpen(false)}
+        onClose={() => {
+          setIsCallModalOpen(false);
+          setActiveCallId(null);
+        }}
       />
 
     </div>

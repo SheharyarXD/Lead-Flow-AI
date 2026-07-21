@@ -38,14 +38,23 @@ export async function generateTwilioVoiceToken(
   credentials?: {
     accountSid?: string | null;
     authToken?: string | null;
+    twimlAppSid?: string | null;
   }
 ) {
   const sid = credentials?.accountSid || process.env.TWILIO_ACCOUNT_SID;
   const token = credentials?.authToken || process.env.TWILIO_AUTH_TOKEN;
-  const twimlAppSid = process.env.TWILIO_TWIML_APP_SID || "APmock_app_sid";
+  // A BYOK org's own TwiML App only exists in their own Twilio account, so
+  // only the platform-wide App SID is a valid fallback when the org is using
+  // the platform's shared Twilio account (i.e. no org-level accountSid set).
+  const twimlAppSid = credentials?.twimlAppSid || (!credentials?.accountSid ? process.env.TWILIO_TWIML_APP_SID : null);
 
-  if (!sid || !token) {
-    return { token: `mock_voice_token_${identity}_${Date.now()}`, identity };
+  if (!sid || !token || !twimlAppSid) {
+    return {
+      token: `mock_voice_token_${identity}_${Date.now()}`,
+      identity,
+      simulated: true as const,
+      reason: !sid || !token ? "Twilio account credentials are not configured" : "No TwiML Application SID is configured for outbound browser calling",
+    };
   }
 
   const AccessToken = twilio.jwt.AccessToken;
@@ -59,37 +68,5 @@ export async function generateTwilioVoiceToken(
   const accessToken = new AccessToken(sid, token, token, { identity });
   accessToken.addGrant(voiceGrant);
 
-  return { token: accessToken.toJwt(), identity };
-}
-
-export async function createTwilioCall(
-  to: string,
-  statusCallbackUrl: string,
-  credentials?: {
-    accountSid?: string | null;
-    authToken?: string | null;
-    phoneNumber?: string | null;
-  }
-) {
-  const sid = credentials?.accountSid || process.env.TWILIO_ACCOUNT_SID;
-  const token = credentials?.authToken || process.env.TWILIO_AUTH_TOKEN;
-  const from = credentials?.phoneNumber || process.env.TWILIO_PHONE_NUMBER;
-
-  if (!sid || !token || !from) {
-    console.warn(`Call initiated in development simulation mode for ${to}`);
-    return { sid: `CA_mock_${Date.now()}`, status: "queued" as const };
-  }
-
-  const client = twilio(sid, token);
-  const call = await client.calls.create({
-    to,
-    from,
-    url: `${statusCallbackUrl}/api/webhooks/voice`,
-    statusCallback: `${statusCallbackUrl}/api/webhooks/voice/status`,
-    statusCallbackEvent: ["initiated", "ringing", "answered", "completed"],
-    record: true,
-    recordingStatusCallback: `${statusCallbackUrl}/api/webhooks/voice/recording`,
-  });
-
-  return call;
+  return { token: accessToken.toJwt(), identity, simulated: false as const };
 }

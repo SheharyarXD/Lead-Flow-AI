@@ -4,6 +4,7 @@ import { trpc } from "@/providers/trpc";
 import { useOrganization } from "@/hooks/useOrganization";
 import { Card } from "@/components/ui/card";
 import { AttachmentsSection } from "@/components/AttachmentsSection";
+import { CallDialerModal } from "@/components/CallDialerModal";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -93,6 +94,18 @@ export default function CustomerDetail() {
   const [tagsList, setTagsList] = useState<string[]>([]);
   const [statusVal, setStatusVal] = useState("");
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [isCallModalOpen, setIsCallModalOpen] = useState(false);
+  const [activeCallId, setActiveCallId] = useState<number | null>(null);
+
+  const initiateCallMutation = trpc.calls.initiateCall.useMutation({
+    onSuccess: (data) => {
+      if (data?.call?.id) {
+        setActiveCallId(data.call.id);
+      }
+      utils.calls.list.invalidate();
+    },
+    onError: (err) => toast.error(err.message || "Failed to start call"),
+  });
 
   useEffect(() => {
     if (customer) {
@@ -326,6 +339,23 @@ export default function CustomerDetail() {
             >
               <Mail className="w-3.5 h-3.5 text-zinc-550" />
               Email
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsCallModalOpen(true);
+                if (customer.phone && organizationId) {
+                  initiateCallMutation.mutate({
+                    organizationId,
+                    phoneNumber: customer.phone,
+                    customerId: customerId,
+                  });
+                }
+              }}
+              className="text-zinc-700 border-zinc-200 h-9 px-4 rounded-lg text-xs font-bold hover:bg-zinc-50 flex items-center gap-1.5 shadow-none"
+            >
+              <Phone className="w-3.5 h-3.5 text-zinc-550" />
+              Call
             </Button>
             <Button
               onClick={handleSendSMS}
@@ -619,6 +649,18 @@ export default function CustomerDetail() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <CallDialerModal
+        isOpen={isCallModalOpen}
+        organizationId={organizationId!}
+        phoneNumber={customer.phone || "Unknown"}
+        contactName={`${customer.firstName} ${customer.lastName}`}
+        callId={activeCallId}
+        onClose={() => {
+          setIsCallModalOpen(false);
+          setActiveCallId(null);
+        }}
+      />
 
     </div>
   );

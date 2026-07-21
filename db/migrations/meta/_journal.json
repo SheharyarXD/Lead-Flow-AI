@@ -29,6 +29,27 @@
       "when": 1784094880341,
       "tag": "0003_violet_shadowcat",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1784604352424,
+      "tag": "0004_spicy_dragon_lord",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1784606210072,
+      "tag": "0005_luxuriant_killmonger",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1784607515440,
+      "tag": "0006_brave_roland_deschain",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,1 @@
+ALTER TABLE `organizations` ADD `twilioTwimlAppSid` varchar(64);

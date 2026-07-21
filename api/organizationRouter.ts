@@ -144,6 +144,7 @@ export const organizationRouter = createRouter({
         twilioAccountSid: z.string().nullable().optional(),
         twilioAuthToken: z.string().nullable().optional(),
         twilioPhoneNumber: z.string().nullable().optional(),
+        twilioTwimlAppSid: z.string().nullable().optional(),
         smtpHost: z.string().nullable().optional(),
         smtpPort: z.number().nullable().optional(),
         smtpUser: z.string().nullable().optional(),
@@ -154,6 +155,18 @@ export const organizationRouter = createRouter({
     .mutation(async ({ input, ctx }) => {
       const { id, ...data } = input;
       await requireOrganizationRole(ctx.user.id, id, ["owner", "admin", "manager"]);
+
+      // Credential fields (Twilio/SMTP secrets, API keys) are more sensitive
+      // than business profile fields and must not be settable by a manager —
+      // gating this in the UI alone isn't enough since this is one shared mutation.
+      const credentialFields: (keyof typeof data)[] = [
+        "openaiApiKey", "twilioAccountSid", "twilioAuthToken", "twilioPhoneNumber", "twilioTwimlAppSid",
+        "smtpHost", "smtpPort", "smtpUser", "smtpPass", "smtpFromEmail",
+      ];
+      if (credentialFields.some((f) => data[f] !== undefined)) {
+        await requireOrganizationRole(ctx.user.id, id, ["owner", "admin"]);
+      }
+
       const updated = await updateOrganization(id, prepareOrgUpdate(data));
       return updated ? sanitizeOrganization(updated) : updated;
     }),

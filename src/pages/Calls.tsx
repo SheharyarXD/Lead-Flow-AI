@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { trpc } from "@/providers/trpc";
 import { useOrganization } from "@/hooks/useOrganization";
 import { Card, CardContent } from "@/components/ui/card";
@@ -6,6 +6,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { CallDialerModal } from "@/components/CallDialerModal";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -21,22 +29,49 @@ import {
   Mic,
   Calendar,
   Play,
+  PhoneOutgoing,
 } from "lucide-react";
+import { toast } from "sonner";
 
 export default function Calls() {
   const { organizationId } = useOrganization();
+  const [searchInput, setSearchInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [directionFilter, setDirectionFilter] = useState("");
   const [aiHandledFilter, setAiHandledFilter] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const [activeTab, setActiveTab] = useState<"all" | "completed" | "missed" | "voicemail">("all");
+  const [isNewCallOpen, setIsNewCallOpen] = useState(false);
+  const [newCallNumber, setNewCallNumber] = useState("");
+  const [isCallModalOpen, setIsCallModalOpen] = useState(false);
+  const [activeCallId, setActiveCallId] = useState<number | null>(null);
+  const [dialedNumber, setDialedNumber] = useState("");
+
+  // Debounce free-text search before sending it to the server.
+  useEffect(() => {
+    const t = setTimeout(() => setSearchQuery(searchInput), 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
 
   const { data: calls, isLoading } = trpc.calls.list.useQuery({
     organizationId: organizationId!,
     limit: 50,
+    search: searchQuery || undefined,
+    direction: directionFilter && directionFilter !== "all" ? directionFilter : undefined,
+    aiHandled: aiHandledFilter === "ai" ? true : aiHandledFilter === "manual" ? false : undefined,
+    status: activeTab !== "all" ? activeTab : undefined,
   }, { enabled: !!organizationId });
 
   const { data: stats } = trpc.calls.stats.useQuery({ organizationId: organizationId! }, { enabled: !!organizationId });
+
+  const initiateCallMutation = trpc.calls.initiateCall.useMutation({
+    onSuccess: (data) => {
+      if (data?.call?.id) {
+        setActiveCallId(data.call.id);
+      }
+    },
+    onError: (err) => toast.error(err.message || "Failed to start call"),
+  });
 
   const formatDurationMinSec = (secondsNum?: number | null) => {
     if (!secondsNum) return "00:00";
@@ -49,7 +84,7 @@ export default function Calls() {
     if (!dateInput) return "—";
     const date = typeof dateInput === "string" ? new Date(dateInput) : dateInput;
     const isToday = new Date().toDateString() === date.toDateString();
-    
+
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     const isYesterday = yesterday.toDateString() === date.toDateString();
@@ -58,7 +93,7 @@ export default function Calls() {
 
     if (isToday) return `Today ${timeStr}`;
     if (isYesterday) return `Yesterday ${timeStr}`;
-    
+
     return `${date.toLocaleDateString([], { month: "short", day: "numeric" })} ${timeStr}`;
   };
 
@@ -95,33 +130,51 @@ export default function Calls() {
     c => c.aiHandled && (c.aiSummary?.toLowerCase().includes("book") || c.aiSummary?.toLowerCase().includes("schedule") || c.aiSummary?.toLowerCase().includes("appoint"))
   ).length ?? 0;
 
-  // Filter call list dynamically based on search, tab, direction, and AI handler filters
-  const filteredCalls = calls?.filter((call) => {
-    const matchesSearch = 
-      call.phoneNumber.includes(searchQuery) ||
-      (call.customer && `${call.customer.firstName} ${call.customer.lastName}`.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (call.aiSummary && call.aiSummary.toLowerCase().includes(searchQuery.toLowerCase()));
-    
-    if (!matchesSearch) return false;
+  const handleResetFilters = () => {
+    setDirectionFilter("");
+    setAiHandledFilter("");
+    setSearchInput("");
+  };
 
-    if (activeTab === "completed" && call.status !== "completed") return false;
-    if (activeTab === "missed" && call.status !== "missed") return false;
-    if (activeTab === "voicemail" && call.status !== "voicemail") return false;
+  const handleExportCsv = () => {
+    if (!calls || calls.length === 0) return;
+    const headers = ["Contact", "Phone", "Direction", "Status", "Duration (s)", "AI Handled", "Timestamp"];
+    const rows = calls.map((c) => [
+      c.customer ? `${c.customer.firstName} ${c.customer.lastName}` : "Unknown",
+      c.phoneNumber,
+      c.direction,
+      c.status,
+      c.duration ?? 0,
+      c.aiHandled ? "Yes" : "No",
+      new Date(c.createdAt || c.startedAt || Date.now()).toISOString(),
+    ]);
+    const csv = [headers, ...rows]
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `calls-export-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
-    if (directionFilter && directionFilter !== "all" && call.direction !== directionFilter) return false;
-
-    if (aiHandledFilter && aiHandledFilter !== "all") {
-      const isAI = call.aiHandled;
-      if (aiHandledFilter === "ai" && !isAI) return false;
-      if (aiHandledFilter === "manual" && isAI) return false;
-    }
-
-    return true;
-  });
+  const handleStartNewCall = () => {
+    if (!newCallNumber.trim() || !organizationId) return;
+    setDialedNumber(newCallNumber.trim());
+    setIsNewCallOpen(false);
+    setIsCallModalOpen(true);
+    initiateCallMutation.mutate({
+      organizationId,
+      phoneNumber: newCallNumber.trim(),
+    });
+    setNewCallNumber("");
+  };
 
   return (
     <div className="p-8 space-y-8 max-w-[1400px] mx-auto bg-[#fcfcfd] min-h-full select-none">
-      
+
       {/* Header section with advanced search & export */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -136,8 +189,8 @@ export default function Calls() {
             <Input
               placeholder="Search calls..."
               className="pl-9 bg-white border-zinc-200 text-xs placeholder:text-zinc-400 h-9 rounded-lg focus-visible:ring-zinc-400 focus-visible:border-zinc-400 shadow-none"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
             />
           </div>
 
@@ -150,8 +203,21 @@ export default function Calls() {
             Advanced Filters
           </Button>
 
-          <Button className="bg-indigo-600 hover:bg-indigo-700 text-white h-9 px-4 rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-[0_2px_8px_rgba(79,70,229,0.25)] transition-all">
+          <Button
+            variant="outline"
+            onClick={handleExportCsv}
+            disabled={!calls || calls.length === 0}
+            className="text-zinc-700 border-zinc-200 h-9 px-4 rounded-lg text-xs font-semibold hover:bg-zinc-50 flex items-center gap-1.5 shadow-none"
+          >
             Export Logs
+          </Button>
+
+          <Button
+            onClick={() => setIsNewCallOpen(true)}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white h-9 px-4 rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-[0_2px_8px_rgba(79,70,229,0.25)] transition-all"
+          >
+            <PhoneOutgoing className="w-3.5 h-3.5" />
+            New Call
           </Button>
         </div>
       </div>
@@ -182,9 +248,9 @@ export default function Calls() {
               </SelectContent>
             </Select>
 
-            <Button 
-              variant="ghost" 
-              onClick={() => { setDirectionFilter(""); setAiHandledFilter(""); setSearchQuery(""); }}
+            <Button
+              variant="ghost"
+              onClick={handleResetFilters}
               className="text-xs font-semibold text-zinc-500 hover:text-zinc-950 h-9 rounded-lg"
             >
               Reset Filters
@@ -277,7 +343,7 @@ export default function Calls() {
       {/* Call History Records Card Container */}
       <Card className="bg-white border-zinc-200/80 shadow-sm rounded-xl overflow-hidden">
         <div className="min-w-[850px] overflow-x-auto">
-          
+
           {/* Header Row */}
           <div className="grid grid-cols-12 gap-2 px-6 py-3.5 text-xs font-bold text-zinc-400 uppercase border-b border-zinc-100 bg-zinc-50/20 select-none">
             <div className="col-span-3">Contact</div>
@@ -307,13 +373,13 @@ export default function Calls() {
                   <div className="col-span-1"><Skeleton className="h-4 w-12 bg-zinc-100" /></div>
                 </div>
               ))
-            ) : !filteredCalls || filteredCalls.length === 0 ? (
+            ) : !calls || calls.length === 0 ? (
               <div className="px-6 py-12 text-center text-xs text-zinc-400 font-semibold bg-white select-none">
                 No call logs found matching your filters.
               </div>
             ) : (
-              filteredCalls.map((call) => {
-                const customerName = call.customer 
+              calls.map((call) => {
+                const customerName = call.customer
                   ? `${call.customer.firstName} ${call.customer.lastName}`
                   : "Unknown Customer";
                 const initials = call.customer
@@ -348,7 +414,7 @@ export default function Calls() {
                     {/* Direction type badge column */}
                     <div className="col-span-2 select-none">
                       <Badge className={`text-[10px] font-bold px-2 py-0.5 rounded-md shadow-none border ${
-                        isCallInbound 
+                        isCallInbound
                           ? "text-indigo-650 bg-indigo-50/50 border border-indigo-100/50"
                           : "text-violet-655 bg-violet-50/50 border border-violet-100/50"
                       }`}>
@@ -375,13 +441,34 @@ export default function Calls() {
                     </div>
 
                     {/* Actions column with play triggers */}
-                    <div className="col-span-1 flex items-center justify-end pr-2 text-zinc-400">
+                    <div className="col-span-1 flex items-center justify-end gap-1.5 pr-2 text-zinc-400">
+                      {call.phoneNumber && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!organizationId) return;
+                            setDialedNumber(call.phoneNumber);
+                            setIsCallModalOpen(true);
+                            initiateCallMutation.mutate({
+                              organizationId,
+                              phoneNumber: call.phoneNumber,
+                              customerId: call.customerId ?? undefined,
+                              leadId: call.leadId ?? undefined,
+                            });
+                          }}
+                          title="Call back"
+                          className="p-2 rounded-full border border-zinc-100 text-zinc-400 bg-zinc-50 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200 transition-all"
+                        >
+                          <Phone className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                       <button
                         disabled={!call.recordingUrl}
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (call.recordingUrl) window.open(call.recordingUrl, "_blank");
+                          if (call.recordingUrl) window.open(`/api/recordings/${call.id}`, "_blank");
                         }}
+                        title="Play recording"
                         className={`p-2 rounded-full border transition-all ${
                           call.recordingUrl
                             ? "border-indigo-200 text-indigo-650 bg-indigo-50/30 hover:bg-indigo-50 hover:scale-[1.05]"
@@ -400,7 +487,7 @@ export default function Calls() {
 
           {/* Footer Pagination Controls */}
           <div className="p-4 border-t border-zinc-100 flex items-center justify-between text-xs font-semibold text-zinc-400 select-none">
-            <span>Showing 1 to {filteredCalls?.length ?? 0} of {totalCallsCount} call logs</span>
+            <span>Showing 1 to {calls?.length ?? 0} of {totalCallsCount} call logs</span>
             <div className="flex gap-1.5">
               <Button variant="outline" className="h-8 px-3 rounded-lg text-zinc-700 border-zinc-200 hover:bg-zinc-50 font-bold shadow-none" disabled>
                 Previous
@@ -413,6 +500,43 @@ export default function Calls() {
 
         </div>
       </Card>
+
+      {/* New Call dialog */}
+      <Dialog open={isNewCallOpen} onOpenChange={setIsNewCallOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Place a Call</DialogTitle>
+          </DialogHeader>
+          <Input
+            placeholder="e.g. +15551234567"
+            value={newCallNumber}
+            onChange={(e) => setNewCallNumber(e.target.value)}
+            className="text-sm"
+            autoFocus
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsNewCallOpen(false)}>Cancel</Button>
+            <Button
+              onClick={handleStartNewCall}
+              disabled={!newCallNumber.trim()}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white"
+            >
+              Call
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <CallDialerModal
+        isOpen={isCallModalOpen}
+        organizationId={organizationId!}
+        phoneNumber={dialedNumber}
+        callId={activeCallId}
+        onClose={() => {
+          setIsCallModalOpen(false);
+          setActiveCallId(null);
+        }}
+      />
 
     </div>
   );

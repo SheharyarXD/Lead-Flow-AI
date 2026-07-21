@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { createRouter, authedQuery } from "./middleware";
 import { eq, and, desc } from "drizzle-orm";
 import { documents, activities } from "@db/schema";
@@ -7,6 +8,7 @@ import {
   requireOnboardedOrganizationMembership as requireOrganizationMembership,
   requireOnboardedOrganizationRole as requireOrganizationRole,
 } from "./queries/organizations";
+import { MAX_UPLOAD_BYTES, isAllowedUploadMimeType } from "./lib/uploads";
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
@@ -40,6 +42,13 @@ export const documentRouter = createRouter({
     )
     .mutation(async ({ input, ctx }) => {
       await requireOrganizationMembership(ctx.user.id, input.organizationId);
+
+      if (input.fileSize !== undefined && input.fileSize > MAX_UPLOAD_BYTES) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: `File exceeds the ${MAX_UPLOAD_BYTES / (1024 * 1024)}MB upload limit` });
+      }
+      if (!input.mimeType || !isAllowedUploadMimeType(input.mimeType)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "This file type is not allowed" });
+      }
 
       const fileKey = `orgs/${input.organizationId}/${Date.now()}-${input.fileName.replace(/[^a-zA-Z0-9.-]/g, "_")}`;
 
@@ -76,6 +85,14 @@ export const documentRouter = createRouter({
     )
     .mutation(async ({ input, ctx }) => {
       await requireOrganizationRole(ctx.user.id, input.organizationId, ["owner", "admin", "manager", "member"]);
+
+      if (input.fileSize !== undefined && input.fileSize > MAX_UPLOAD_BYTES) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: `File exceeds the ${MAX_UPLOAD_BYTES / (1024 * 1024)}MB upload limit` });
+      }
+      if (!input.mimeType || !isAllowedUploadMimeType(input.mimeType)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "This file type is not allowed" });
+      }
+
       const db = getDb();
 
       const [inserted] = await db.insert(documents).values({

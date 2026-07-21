@@ -1,8 +1,19 @@
 import { useState, useRef } from "react";
+import { toast } from "sonner";
 import { trpc } from "@/providers/trpc";
 import { useOrganization } from "@/hooks/useOrganization";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Paperclip, UploadCloud, Trash2, FileText, Download, Loader2 } from "lucide-react";
 
 interface AttachmentsSectionProps {
@@ -10,12 +21,29 @@ interface AttachmentsSectionProps {
   customerId?: number;
 }
 
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+const ALLOWED_MIME_TYPES = new Set([
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+  "text/plain",
+  "text/csv",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/zip",
+]);
+
 export function AttachmentsSection({ leadId, customerId }: AttachmentsSectionProps) {
   const { organizationId } = useOrganization();
   const utils = trpc.useUtils();
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const documentsQuery = trpc.document.list.useQuery(
@@ -31,13 +59,30 @@ export function AttachmentsSection({ leadId, customerId }: AttachmentsSectionPro
   const confirmUploadMutation = trpc.document.confirmUpload.useMutation();
   const deleteMutation = trpc.document.delete.useMutation({
     onSuccess: () => {
+      toast.success("Document deleted");
       utils.document.list.invalidate();
     },
+    onError: (err) => toast.error(err.message || "Failed to delete document"),
   });
 
   const handleFileUpload = async (files: FileList | null) => {
     if (!files || files.length === 0 || !organizationId) return;
     const file = files[0];
+
+    if (file.size > MAX_UPLOAD_BYTES) {
+      const msg = `File exceeds the ${MAX_UPLOAD_BYTES / (1024 * 1024)}MB upload limit`;
+      setErrorMsg(msg);
+      toast.error(msg);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+    if (!file.type || !ALLOWED_MIME_TYPES.has(file.type)) {
+      const msg = "This file type is not allowed";
+      setErrorMsg(msg);
+      toast.error(msg);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
 
     setIsUploading(true);
     setUploadProgress(10);
@@ -87,9 +132,12 @@ export function AttachmentsSection({ leadId, customerId }: AttachmentsSectionPro
       });
 
       setUploadProgress(100);
+      toast.success("Document uploaded");
       utils.document.list.invalidate();
     } catch (err: any) {
-      setErrorMsg(err.message || "Failed to upload document");
+      const msg = err.message || "Failed to upload document";
+      setErrorMsg(msg);
+      toast.error(msg);
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -221,7 +269,7 @@ export function AttachmentsSection({ leadId, customerId }: AttachmentsSectionPro
                     <Download className="w-3.5 h-3.5" />
                   </button>
                   <button
-                    onClick={() => deleteMutation.mutate({ id: doc.id })}
+                    onClick={() => setPendingDeleteId(doc.id)}
                     disabled={deleteMutation.isPending}
                     className="p-1.5 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
                   >
@@ -233,6 +281,29 @@ export function AttachmentsSection({ leadId, customerId }: AttachmentsSectionPro
           )}
         </div>
       </CardContent>
+
+      <AlertDialog open={pendingDeleteId !== null} onOpenChange={(open) => !open && setPendingDeleteId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this document?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This file will be permanently removed. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (pendingDeleteId !== null) deleteMutation.mutate({ id: pendingDeleteId });
+                setPendingDeleteId(null);
+              }}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }

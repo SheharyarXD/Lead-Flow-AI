@@ -159,6 +159,7 @@ export default function Settings() {
     accountSid: "",
     authToken: "",
     phoneNumber: "",
+    twimlAppSid: "",
   });
 
   const [smtpForm, setSmtpForm] = useState({
@@ -229,6 +230,7 @@ export default function Settings() {
         // Secret — never round-tripped from the server. Blank = unchanged.
         authToken: "",
         phoneNumber: org.twilioPhoneNumber || "",
+        twimlAppSid: org.twilioTwimlAppSid || "",
       });
       setSmtpForm({
         host: org.smtpHost || "",
@@ -259,6 +261,7 @@ export default function Settings() {
       twilioAccountSid: twilioForm.accountSid.trim() || undefined,
       twilioAuthToken: twilioForm.authToken.trim() || undefined,
       twilioPhoneNumber: twilioForm.phoneNumber.trim() || undefined,
+      twilioTwimlAppSid: twilioForm.twimlAppSid.trim() || undefined,
     }, {
       onSuccess: () => {
         setSaveTwilioSuccess(true);
@@ -387,14 +390,18 @@ export default function Settings() {
             <Users className="w-4 h-4" />
             Team
           </TabsTrigger>
-          <TabsTrigger value="integrations" className="gap-2">
-            <Link2 className="w-4 h-4" />
-            Integrations
-          </TabsTrigger>
-          <TabsTrigger value="billing" className="gap-2">
-            <CreditCard className="w-4 h-4" />
-            Billing
-          </TabsTrigger>
+          {canManageTeam && (
+            <TabsTrigger value="integrations" className="gap-2">
+              <Link2 className="w-4 h-4" />
+              Integrations
+            </TabsTrigger>
+          )}
+          {canManageTeam && (
+            <TabsTrigger value="billing" className="gap-2">
+              <CreditCard className="w-4 h-4" />
+              Billing
+            </TabsTrigger>
+          )}
         </TabsList>
 
         {/* Business Settings */}
@@ -852,12 +859,24 @@ export default function Settings() {
                 </div>
                 <div className="space-y-2 text-left sm:col-span-2">
                   <Label>Twilio Phone Number (Sender)</Label>
-                  <Input 
-                    placeholder="e.g. +15551234567" 
-                    value={twilioForm.phoneNumber} 
-                    onChange={(e) => setTwilioForm({ ...twilioForm, phoneNumber: e.target.value })} 
+                  <Input
+                    placeholder="e.g. +15551234567"
+                    value={twilioForm.phoneNumber}
+                    onChange={(e) => setTwilioForm({ ...twilioForm, phoneNumber: e.target.value })}
                     className="bg-white border-zinc-200 text-xs shadow-none h-9"
                   />
+                </div>
+                <div className="space-y-2 text-left sm:col-span-2">
+                  <Label>TwiML Application SID</Label>
+                  <Input
+                    placeholder="AP..."
+                    value={twilioForm.twimlAppSid}
+                    onChange={(e) => setTwilioForm({ ...twilioForm, twimlAppSid: e.target.value })}
+                    className="bg-white border-zinc-200 text-xs shadow-none h-9"
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    Required for click-to-call from the browser when using your own Twilio account. Create a TwiML App in your Twilio console with its Voice URL set to this server's <code>/api/webhooks/voice</code> endpoint.
+                  </p>
                 </div>
               </div>
               <div className="text-left pt-2">

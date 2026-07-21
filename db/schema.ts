@@ -72,6 +72,11 @@ export const organizations = mysqlTable(
     twilioAccountSid: text("twilioAccountSid"),
     twilioAuthToken: text("twilioAuthToken"),
     twilioPhoneNumber: varchar("twilioPhoneNumber", { length: 50 }),
+    // TwiML Applications are scoped to a single Twilio account, so a BYOK
+    // organization using their own Twilio account needs their own App SID —
+    // a platform-wide env var can only ever serve orgs on the platform's
+    // shared Twilio account.
+    twilioTwimlAppSid: varchar("twilioTwimlAppSid", { length: 64 }),
     smtpHost: varchar("smtpHost", { length: 255 }),
     smtpPort: int("smtpPort"),
     smtpUser: varchar("smtpUser", { length: 255 }),
@@ -346,11 +351,17 @@ export const calls = mysqlTable(
     }),
     phoneNumber: varchar("phoneNumber", { length: 50 }).notNull(),
     direction: mysqlEnum("direction", ["inbound", "outbound"]).notNull(),
-    status: mysqlEnum("status", ["queued", "ringing", "in_progress", "completed", "missed", "voicemail", "failed", "busy", "no_answer"])
+    status: mysqlEnum("status", ["queued", "ringing", "in_progress", "completed", "missed", "voicemail", "failed", "busy", "no_answer", "canceled"])
       .default("queued")
       .notNull(),
+    // Twilio's CallSid for the primary (customer-facing) leg. This is what every
+    // status/recording webhook keys off of, so callbacks update exactly the call
+    // they're about instead of guessing by phone number — the only reliable
+    // idempotency key Twilio gives us for a call.
+    twilioCallSid: varchar("twilioCallSid", { length: 64 }).unique(),
     duration: int("duration"),
     recordingUrl: text("recordingUrl"),
+    recordingSid: varchar("recordingSid", { length: 64 }),
     recordingDuration: int("recordingDuration"),
     transcript: text("transcript"),
     transcriptStatus: mysqlEnum("transcriptStatus", ["pending", "processing", "completed", "failed"]).default("pending"),
@@ -530,6 +541,15 @@ export const subscriptions = mysqlTable(
 
 export type Subscription = typeof subscriptions.$inferSelect;
 export type InsertSubscription = typeof subscriptions.$inferInsert;
+
+// Dedup log for Stripe webhook deliveries — Stripe retries on timeout/error,
+// so the same event id can arrive more than once; this makes processing idempotent.
+export const stripeEvents = mysqlTable("stripeEvents", {
+  id: serial("id").primaryKey(),
+  stripeEventId: varchar("stripeEventId", { length: 255 }).notNull().unique(),
+  type: varchar("type", { length: 100 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
 
 // ─── Knowledge Base ──────────────────────────────────────────────────────
 export const knowledgeBase = mysqlTable(

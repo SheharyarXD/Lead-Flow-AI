@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { createRouter, authedQuery } from "./middleware";
 import { eq, count } from "drizzle-orm";
 import { subscriptions, leads, organizationMembers } from "@db/schema";
@@ -7,16 +8,12 @@ import {
   requireOnboardedOrganizationMembership as requireOrganizationMembership,
   requireOnboardedOrganizationRole as requireOrganizationRole,
 } from "./queries/organizations";
+import { env } from "./lib/env";
+import { PLAN_PRICES, PLAN_LIMITS } from "./lib/billing";
 import Stripe from "stripe";
 
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
 const stripe = stripeSecretKey ? new Stripe(stripeSecretKey, { apiVersion: "2025-02-24.acacia" as any }) : null;
-
-const PLAN_PRICES = {
-  starter: process.env.STRIPE_PRICE_STARTER || "price_mock_starter",
-  professional: process.env.STRIPE_PRICE_PRO || "price_mock_pro",
-  enterprise: process.env.STRIPE_PRICE_ENTERPRISE || "price_mock_enterprise",
-};
 
 export const billingRouter = createRouter({
   getSubscription: authedQuery
@@ -95,6 +92,17 @@ export const billingRouter = createRouter({
       const hostUrl = input.originUrl || process.env.PUBLIC_URL || "http://localhost:3000";
       const priceId = PLAN_PRICES[input.plan];
 
+      if (stripe && stripeSecretKey && priceId.startsWith("price_mock_")) {
+        // Stripe is live but this plan's price id was never configured — sending
+        // the placeholder id would fail cryptically inside Stripe's API instead
+        // of here, so fail fast with a message that says what to actually fix.
+        const envVar = { starter: "STRIPE_PRICE_STARTER", professional: "STRIPE_PRICE_PRO", enterprise: "STRIPE_PRICE_ENTERPRISE" }[input.plan];
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: `No Stripe price is configured for the ${input.plan} plan. Set ${envVar}.`,
+        });
+      }
+
       if (stripe && stripeSecretKey) {
         let sub = await db.query.subscriptions.findFirst({
           where: eq(subscriptions.organizationId, input.organizationId),
@@ -126,22 +134,41 @@ export const billingRouter = createRouter({
             organizationId: String(input.organizationId),
             plan: input.plan,
           },
+          // Also stamped on the subscription itself so later lifecycle events
+          // (subscription.updated/deleted) can resolve the tenant without
+          // relying on a local stripeCustomerId/stripeSubscriptionId lookup.
+          subscription_data: {
+            metadata: {
+              organizationId: String(input.organizationId),
+            },
+          },
         });
 
         return { url: session.url, simulated: false };
       }
 
-      // Simulated Stripe checkout fallback when secret key is not set
+      // No live Stripe configuration. This must never silently grant paid
+      // entitlements — that would be a free-upgrade exploit the moment Stripe
+      // keys are missing (including by accident in production). Only allow a
+      // clearly-labeled simulated upgrade in non-production environments, for
+      // local development and demos.
+      if (env.isProduction) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Billing is not configured. Set STRIPE_SECRET_KEY to enable plan upgrades.",
+        });
+      }
+
       const simulatedUrl = `${hostUrl}/settings?tab=billing&checkout=success&simulated_plan=${input.plan}`;
-      
-      // Upgrade local sub in simulation mode
+      const limits = PLAN_LIMITS[input.plan];
+
       await db
         .update(subscriptions)
         .set({
           plan: input.plan,
           status: "active",
-          leadsLimit: input.plan === "enterprise" ? 10000 : input.plan === "professional" ? 1000 : 100,
-          minutesIncluded: input.plan === "enterprise" ? 5000 : input.plan === "professional" ? 1000 : 100,
+          leadsLimit: limits.leadsLimit,
+          minutesIncluded: limits.minutesIncluded,
         })
         .where(eq(subscriptions.organizationId, input.organizationId));
 
