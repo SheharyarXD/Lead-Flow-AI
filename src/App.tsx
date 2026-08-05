@@ -12,6 +12,7 @@ import Tasks from "./pages/Tasks";
 import Settings from "./pages/Settings";
 import Admin from "./pages/Admin";
 import Reports from "./pages/Reports";
+import Workflows from "./pages/Workflows";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
 import CustomerDetail from "./pages/CustomerDetail";
@@ -37,6 +38,7 @@ export default function App() {
           <Route path="/calendar" element={<Calendar />} />
           <Route path="/tasks" element={<Tasks />} />
           <Route path="/reports" element={<Reports />} />
+          <Route path="/workflows" element={<Workflows />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/admin" element={<Admin />} />
         </Route>

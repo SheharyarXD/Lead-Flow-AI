@@ -1,6 +1,6 @@
 import { getDb } from "./connection";
 import { automations } from "@db/schema";
-import { eq, and, desc, count } from "drizzle-orm";
+import { eq, and, desc, count, sql } from "drizzle-orm";
 
 export async function findAutomationsByOrganization(organizationId: number, filters?: {
   status?: string;
@@ -47,18 +47,31 @@ export async function deleteAutomation(id: number) {
 }
 
 export async function getAutomationStats(organizationId: number) {
-  const total = await getDb()
+  const db = getDb();
+  const total = await db
     .select({ count: count() })
     .from(automations)
     .where(eq(automations.organizationId, organizationId));
 
-  const active = await getDb()
+  const active = await db
     .select({ count: count() })
     .from(automations)
     .where(and(eq(automations.organizationId, organizationId), eq(automations.status, "active")));
 
+  const paused = await db
+    .select({ count: count() })
+    .from(automations)
+    .where(and(eq(automations.organizationId, organizationId), eq(automations.status, "paused")));
+
+  const totalRuns = await db
+    .select({ sum: sql<number>`COALESCE(SUM(${automations.runCount}), 0)` })
+    .from(automations)
+    .where(eq(automations.organizationId, organizationId));
+
   return {
     total: total[0].count,
     active: active[0].count,
+    paused: paused[0].count,
+    totalRuns: Number(totalRuns[0].sum || 0),
   };
 }

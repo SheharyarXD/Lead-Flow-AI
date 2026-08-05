@@ -89,6 +89,12 @@ async function main() {
     ) ENGINE=InnoDB;
   `);
 
+  // 9. Add missing columns to calls table
+  await runSql("ALTER TABLE calls ADD COLUMN twilioCallSid varchar(64) DEFAULT NULL;");
+  await runSql("ALTER TABLE calls ADD COLUMN recordingSid varchar(64) DEFAULT NULL;");
+  await runSql("ALTER TABLE calls ADD UNIQUE INDEX calls_twilioCallSid_unique (twilioCallSid);");
+  await runSql("ALTER TABLE calls MODIFY COLUMN status enum('queued','ringing','in_progress','completed','missed','voicemail','failed','busy','no_answer','canceled') NOT NULL DEFAULT 'queued';");
+
   console.log("Database repair completed successfully!");
   await connection.end();
   process.exit(0);

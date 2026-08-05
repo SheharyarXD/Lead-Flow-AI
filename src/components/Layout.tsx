@@ -24,6 +24,7 @@ import {
   Search,
   CheckSquare,
   BarChart3,
+  Zap,
 } from "lucide-react";
 
 const navItems = [
@@ -34,6 +35,7 @@ const navItems = [
   { icon: Calendar, label: "Calendar", path: "/calendar" },
   { icon: CheckSquare, label: "Tasks", path: "/tasks" },
   { icon: BarChart3, label: "Reports", path: "/reports" },
+  { icon: Zap, label: "Workflows", path: "/workflows" },
 ];
 
 export default function Layout() {
