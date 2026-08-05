@@ -53,6 +53,7 @@ async function main() {
   await runSql("ALTER TABLE organizations ADD COLUMN twilioAccountSid text DEFAULT NULL;");
   await runSql("ALTER TABLE organizations ADD COLUMN twilioAuthToken text DEFAULT NULL;");
   await runSql("ALTER TABLE organizations ADD COLUMN twilioPhoneNumber varchar(50) DEFAULT NULL;");
+  await runSql("ALTER TABLE organizations ADD COLUMN twilioTwimlAppSid varchar(64) DEFAULT NULL;");
   await runSql("ALTER TABLE organizations ADD COLUMN smtpHost varchar(255) DEFAULT NULL;");
   await runSql("ALTER TABLE organizations ADD COLUMN smtpPort int DEFAULT NULL;");
   await runSql("ALTER TABLE organizations ADD COLUMN smtpUser varchar(255) DEFAULT NULL;");
@@ -75,6 +76,16 @@ async function main() {
       INDEX doc_org_idx (organizationId),
       INDEX doc_customer_idx (customerId),
       INDEX doc_lead_idx (leadId)
+    ) ENGINE=InnoDB;
+  `);
+
+  // 8. Create stripeEvents table if not exists
+  await runSql(`
+    CREATE TABLE IF NOT EXISTS stripeEvents (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      stripeEventId VARCHAR(255) NOT NULL UNIQUE,
+      type VARCHAR(100) NOT NULL,
+      createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
     ) ENGINE=InnoDB;
   `);
 

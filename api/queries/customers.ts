@@ -1,5 +1,5 @@
 import { getDb } from "./connection";
-import { customers, appointments } from "@db/schema";
+import { customers, appointments, leads, conversations, calls, tasks } from "@db/schema";
 import { eq, and, desc, like, or, count, sql, gte } from "drizzle-orm";
 import type { InferInsertModel } from "drizzle-orm";
 
@@ -48,24 +48,45 @@ export async function findCustomersByOrganization(organizationId: number, filter
 }
 
 export async function findCustomerById(id: number) {
-  return getDb().query.customers.findFirst({
+  const db = getDb();
+
+  const customerRow = await db.query.customers.findFirst({
     where: eq(customers.id, id),
-    with: {
-      leads: true,
-      conversations: {
-        orderBy: [desc(customers.createdAt)],
-      },
-      calls: {
-        orderBy: [desc(customers.createdAt)],
-      },
-      tasks: {
-        orderBy: [desc(customers.createdAt)],
-      },
-      appointments: {
-        orderBy: [desc(appointments.startTime)],
-      },
-    },
   });
+  if (!customerRow) return null;
+
+  const leadsVal = await db.query.leads.findMany({
+    where: eq(leads.customerId, id),
+  });
+
+  const conversationsVal = await db.query.conversations.findMany({
+    where: eq(conversations.customerId, id),
+    orderBy: [desc(conversations.createdAt)],
+  });
+
+  const callsVal = await db.query.calls.findMany({
+    where: eq(calls.customerId, id),
+    orderBy: [desc(calls.createdAt)],
+  });
+
+  const tasksVal = await db.query.tasks.findMany({
+    where: eq(tasks.customerId, id),
+    orderBy: [desc(tasks.createdAt)],
+  });
+
+  const appointmentsVal = await db.query.appointments.findMany({
+    where: eq(appointments.customerId, id),
+    orderBy: [desc(appointments.startTime)],
+  });
+
+  return {
+    ...customerRow,
+    leads: leadsVal,
+    conversations: conversationsVal,
+    calls: callsVal,
+    tasks: tasksVal,
+    appointments: appointmentsVal,
+  };
 }
 
 export async function createCustomer(data: InferInsertModel<typeof customers>) {
