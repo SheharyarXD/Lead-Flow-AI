@@ -5,6 +5,7 @@ import {
   getRecentActivity,
   getUpcomingTasks,
   getUpcomingAppointments,
+  getReportsStats,
 } from "./queries/dashboard";
 import { requireOnboardedOrganizationMembership as requireOrganizationMembership } from "./queries/organizations";
 
@@ -50,5 +51,12 @@ export const dashboardRouter = createRouter({
     .query(async ({ input, ctx }) => {
       await requireOrganizationMembership(ctx.user.id, input.organizationId);
       return getUpcomingAppointments(input.organizationId, input.limit ?? 5);
+    }),
+
+  reports: authedQuery
+    .input(z.object({ organizationId: z.number() }))
+    .query(async ({ input, ctx }) => {
+      await requireOrganizationMembership(ctx.user.id, input.organizationId);
+      return getReportsStats(input.organizationId);
     }),
 });

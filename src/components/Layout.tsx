@@ -23,6 +23,7 @@ import {
   Settings,
   Search,
   CheckSquare,
+  BarChart3,
 } from "lucide-react";
 
 const navItems = [
@@ -32,6 +33,7 @@ const navItems = [
   { icon: Phone, label: "Calls", path: "/calls" },
   { icon: Calendar, label: "Calendar", path: "/calendar" },
   { icon: CheckSquare, label: "Tasks", path: "/tasks" },
+  { icon: BarChart3, label: "Reports", path: "/reports" },
 ];
 
 export default function Layout() {

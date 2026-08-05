@@ -1,5 +1,5 @@
 import { getDb } from "./connection";
-import { leads, conversations, calls, tasks, appointments, activities, subscriptions, organizations, customers, messages } from "@db/schema";
+import { leads, conversations, calls, tasks, appointments, activities, subscriptions, organizations, customers, messages, organizationMembers } from "@db/schema";
 import { eq, and, gte, desc, count, sql } from "drizzle-orm";
 
 export async function getDashboardStats(organizationId: number) {
@@ -157,4 +157,89 @@ export async function getUpcomingAppointments(organizationId: number, limit = 5)
     orderBy: [appointments.startTime],
     limit,
   });
+}
+
+export async function getReportsStats(organizationId: number) {
+  const db = getDb();
+
+  // Call outcomes distribution
+  const callOutcomesRaw = await db
+    .select({ status: calls.status, count: count() })
+    .from(calls)
+    .where(eq(calls.organizationId, organizationId))
+    .groupBy(calls.status);
+
+  // Leads distribution by status
+  const leadsByStatusRaw = await db
+    .select({ status: leads.status, count: count() })
+    .from(leads)
+    .where(eq(leads.organizationId, organizationId))
+    .groupBy(leads.status);
+
+  // Fetch all organization members to construct team performance metrics
+  const members = await db.query.organizationMembers.findMany({
+    where: eq(organizationMembers.organizationId, organizationId),
+    with: {
+      user: true,
+    },
+  });
+
+  const teamPerformance = [];
+
+  for (const m of members) {
+    if (!m.user) continue;
+
+    // Leads assigned to user
+    const [assignedLeads] = await db
+      .select({ count: count() })
+      .from(leads)
+      .where(and(eq(leads.organizationId, organizationId), eq(leads.assignedTo, m.userId)));
+
+    // Tasks counts
+    const tasksRaw = await db
+      .select({ status: tasks.status, count: count() })
+      .from(tasks)
+      .where(and(eq(tasks.organizationId, organizationId), eq(tasks.assignedTo, m.userId)))
+      .groupBy(tasks.status);
+
+    let tasksCompleted = 0;
+    let tasksPending = 0;
+    for (const t of tasksRaw) {
+      if (t.status === "completed") tasksCompleted = t.count;
+      else tasksPending += t.count;
+    }
+
+    // Calls stats
+    const [callsStats] = await db
+      .select({
+        count: count(),
+        sumDuration: sql<number>`COALESCE(SUM(${calls.duration}), 0)`,
+      })
+      .from(calls)
+      .where(and(eq(calls.organizationId, organizationId), eq(calls.userId, m.userId)));
+
+    teamPerformance.push({
+      userId: m.userId,
+      name: m.user.name || "Unknown User",
+      email: m.user.email,
+      role: m.role,
+      leadsAssigned: assignedLeads?.count ?? 0,
+      tasksCompleted,
+      tasksPending,
+      callsCompleted: callsStats?.count ?? 0,
+      totalTalkTime: Number(callsStats?.sumDuration ?? 0),
+    });
+  }
+
+  return {
+    callOutcomes: callOutcomesRaw.map((c) => ({
+      status: c.status || "unknown",
+      count: c.count,
+    })),
+    leadsByStatus: leadsByStatusRaw.map((l) => ({
+      status: l.status || "unknown",
+      count: l.count,
+    })),
+    teamPerformance,
+  };
 }

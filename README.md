@@ -1,73 +1,97 @@
-# React + TypeScript + Vite
+# LeadFlow AI — Production Setup & Deployment Guide
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+This repository contains the full source code for LeadFlow AI, a multi-tenant AI Receptionist SaaS platform with integrated CRM pipelines, unified inbox SMS/Email threads, Stripe subscription management, Cloud storage file attachments, and browser-based VoIP voice calling.
 
-Currently, two official plugins are available:
+---
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## 🛠️ Production Environment Setup
 
-## React Compiler
+To run this application in production, duplicate `.env.example` to `.env` and configure the following keys:
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```env
+# Database Credentials
+DATABASE_URL="mysql://username:password@hostname:3306/dbname"
 
-## Expanding the ESLint configuration
+# JWT Secret Key
+JWT_SECRET="your-ultra-secure-jwt-secret-key"
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+# OpenAI Credentials
+OPENAI_API_KEY="sk-proj-..."
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+# S3 / R2 Storage Bucket (for Lead/Customer file attachments)
+S3_BUCKET="your-storage-bucket-name"
+S3_REGION="us-east-1"
+S3_ACCESS_KEY_ID="AKIA..."
+S3_SECRET_ACCESS_KEY="..."
+# Optional endpoint if using Cloudflare R2 or MinIO
+S3_ENDPOINT="https://<account-id>.r2.cloudflarestorage.com"
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+# Twilio Credentials (for SMS & browser calling)
+TWILIO_ACCOUNT_SID="AC..."
+TWILIO_AUTH_TOKEN="..."
+TWILIO_PHONE_NUMBER="+1..."
+# Create a TwiML App in Twilio Console under Voice -> TwiML Apps
+TWILIO_TWIML_APP_SID="AP..."
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+# Stripe Billing Credentials
+STRIPE_SECRET_KEY="sk_live_..."
+STRIPE_WEBHOOK_SECRET="whsec_..."
+STRIPE_PRICE_STARTER="price_..."
+STRIPE_PRICE_PRO="price_..."
+STRIPE_PRICE_ENTERPRISE="price_..."
+
+# SMTP Email routing (for customer follow-ups)
+SMTP_HOST="smtp.sendgrid.net"
+SMTP_PORT=587
+SMTP_USER="apikey"
+SMTP_PASS="your_password"
+SMTP_FROM_EMAIL="support@yourdomain.com"
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+---
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## 📞 1. Twilio Voice App Setup
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+To enable browser-based calling:
+1. Log into your **Twilio Console**.
+2. Navigate to **Voice ➜ TwiML Apps** and click **Create new TwiML App**.
+3. Name your app (e.g., `LeadFlow AI Production`).
+4. Set the **Voice Request URL** to:
+   `https://yourdomain.com/api/webhooks/voice`
+   *(Must be set to POST format)*
+5. Copy the generated **TwiML App SID** (starts with `AP...`) and paste it as `TWILIO_TWIML_APP_SID` in your `.env`.
+6. Ensure the phone number you purchased under **Phone Numbers ➜ Active Numbers** has the **Voice** capability enabled, and configure it to point inbound calls to this TwiML App.
+
+---
+
+## 💳 2. Stripe Webhook Registration
+
+To automate customer plan upgrades:
+1. Log into your **Stripe Dashboard**.
+2. Navigate to **Developers ➜ Webhooks** and click **Add Endpoint**.
+3. Set the endpoint URL to:
+   `https://yourdomain.com/api/webhooks/stripe`
+4. Choose the following events to listen to:
+   * `checkout.session.completed`
+5. Save the endpoint and copy the **Signing Secret** (`whsec_...`). Save it as `STRIPE_WEBHOOK_SECRET` in `.env`.
+
+---
+
+## 🚀 Local Quickstart
+
+### **1. Install Dependencies**
+```bash
+npm install
 ```
+
+### **2. Synchronize Database Models**
+Run the database repair utility to align any missing schemas in MySQL:
+```bash
+npm run db:repair
+```
+
+### **3. Start Development Server**
+```bash
+npm run dev
+```
+Open `http://localhost:3000` in your web browser.
