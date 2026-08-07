@@ -35,6 +35,7 @@ export default function ConversationThread() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<"All" | "AI Handled" | "Urgent">("All");
   const [isInternalNote, setIsInternalNote] = useState(false);
+  const [simulateAsCustomer, setSimulateAsCustomer] = useState(false);
 
   const { data: conversations, isLoading: listLoading } = trpc.conversation.list.useQuery({
     organizationId: organizationId!,
@@ -97,7 +98,7 @@ export default function ConversationThread() {
     sendMessage.mutate({
       conversationId: convId,
       content: message,
-      senderType: "agent",
+      senderType: simulateAsCustomer ? "customer" : "agent",
       isInternalNote,
     });
     setIsInternalNote(false);
@@ -469,9 +470,12 @@ export default function ConversationThread() {
           <div className="flex items-center gap-4 mb-2.5 px-1">
             <button
               type="button"
-              onClick={() => setIsInternalNote(false)}
+              onClick={() => {
+                setIsInternalNote(false);
+                setSimulateAsCustomer(false);
+              }}
               className={`text-[10px] font-bold pb-1.5 border-b-2 transition-all ${
-                !isInternalNote
+                !isInternalNote && !simulateAsCustomer
                   ? "border-indigo-600 text-indigo-600"
                   : "border-transparent text-zinc-400 hover:text-zinc-600"
               }`}
@@ -480,7 +484,24 @@ export default function ConversationThread() {
             </button>
             <button
               type="button"
-              onClick={() => setIsInternalNote(true)}
+              onClick={() => {
+                setIsInternalNote(false);
+                setSimulateAsCustomer(true);
+              }}
+              className={`text-[10px] font-bold pb-1.5 border-b-2 transition-all ${
+                !isInternalNote && simulateAsCustomer
+                  ? "border-green-600 text-green-600"
+                  : "border-transparent text-zinc-400 hover:text-green-650"
+              }`}
+            >
+              Simulate Customer Reply
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setIsInternalNote(true);
+                setSimulateAsCustomer(false);
+              }}
               className={`text-[10px] font-bold pb-1.5 border-b-2 transition-all ${
                 isInternalNote
                   ? "border-amber-500 text-amber-700"
@@ -493,14 +514,18 @@ export default function ConversationThread() {
 
           <div className="flex gap-2">
             <Input
-              placeholder={isInternalNote ? "Type an internal note only visible to team members..." : "Type a message..."}
+              placeholder={
+                isInternalNote
+                  ? "Type an internal note only visible to team members..."
+                  : (simulateAsCustomer ? "Simulate customer text message response..." : "Type a message...")
+              }
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSend()}
               className={`flex-1 bg-zinc-50 border-zinc-200 text-xs focus-visible:ring-1 ${
                 isInternalNote
                   ? "focus-visible:ring-amber-400 focus-visible:border-amber-400"
-                  : "focus-visible:ring-zinc-400 focus-visible:border-zinc-400"
+                  : (simulateAsCustomer ? "focus-visible:ring-green-500 focus-visible:border-green-500" : "focus-visible:ring-zinc-400 focus-visible:border-zinc-400")
               }`}
             />
             <Button
@@ -509,7 +534,7 @@ export default function ConversationThread() {
               className={`rounded-lg px-4 transition-colors ${
                 isInternalNote
                   ? "bg-amber-500 hover:bg-amber-600 text-white"
-                  : "bg-indigo-600 hover:bg-indigo-700 text-white"
+                  : (simulateAsCustomer ? "bg-green-600 hover:bg-green-700 text-white" : "bg-indigo-600 hover:bg-indigo-700 text-white")
               }`}
             >
               <Send className="w-3.5 h-3.5" />
@@ -518,7 +543,7 @@ export default function ConversationThread() {
           <p className="text-[9px] text-zinc-400 font-semibold mt-2">
             {isInternalNote
               ? "Internal notes are saved privately and will not be sent to the customer."
-              : "Press Enter to send. AI replies are drafted automatically."}
+              : (simulateAsCustomer ? "Sends a simulated incoming customer response to trigger the AI Receptionist." : "Press Enter to send. AI replies are drafted automatically.")}
           </p>
         </div>
       </div>

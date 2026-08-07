@@ -124,9 +124,15 @@ export const conversationRouter = createRouter({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      console.log("[DEBUG] conversation.sendMessage ENTERED");
+      console.log(`[DEBUG] senderType=${input.senderType}`);
+      console.log(`[DEBUG] conversationId=${input.conversationId}`);
+
       const conversation = await findConversationById(input.conversationId);
       if (!conversation) throw new Error("Conversation not found");
       await requireOrganizationRole(ctx.user.id, conversation.organizationId, ["owner", "admin", "manager", "member"]);
+      
+      console.log(`[DEBUG] aiHandled=${conversation.aiHandled}`);
       
       if (input.senderType !== "agent" && input.senderType !== "customer") {
         throw new Error("Invalid message sender: Must be 'agent' or 'customer'");
@@ -138,7 +144,9 @@ export const conversationRouter = createRouter({
         input.senderId = undefined;
       }
       
+      console.log("[DEBUG] Saving message");
       const message = await createMessage(input);
+      console.log(`[DEBUG] Message saved: id=${message?.id}`);
       
       await createActivity({
         organizationId: conversation.organizationId,
@@ -152,10 +160,12 @@ export const conversationRouter = createRouter({
 
       if (input.senderType === "customer" && conversation.aiHandled) {
         try {
-          console.log(`[AI Router Trigger] Launching auto-reply for conversation ${conversation.id}`);
+          console.log("[AI-TRIGGER] About to call triggerAIAutoReply");
           await triggerAIAutoReply(conversation.id, input.content);
-        } catch (err: any) {
-          console.error("AI trigger failed with stack trace:", err.stack || err);
+          console.log("[AI-TRIGGER] triggerAIAutoReply completed");
+        } catch (error: any) {
+          console.error("[AI-TRIGGER] FAILED:", error);
+          console.error(error instanceof Error ? error.stack : error);
         }
       }
 
