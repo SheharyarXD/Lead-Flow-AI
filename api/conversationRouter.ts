@@ -14,6 +14,7 @@ import {
 } from "./queries/conversations";
 import { requireOnboardedOrganizationMembership as requireOrganizationMembership, requireOnboardedOrganizationRole as requireOrganizationRole } from "./queries/organizations";
 import { createActivity } from "./queries/activities";
+import { triggerAIAutoReply } from "./lib/ai-agent";
 
 export const conversationRouter = createRouter({
   list: authedQuery
@@ -126,18 +127,38 @@ export const conversationRouter = createRouter({
       const conversation = await findConversationById(input.conversationId);
       if (!conversation) throw new Error("Conversation not found");
       await requireOrganizationRole(ctx.user.id, conversation.organizationId, ["owner", "admin", "manager", "member"]);
-      if (input.senderType !== "agent" || input.senderId !== undefined) throw new Error("Invalid message sender");
-      input.senderId = ctx.user.id;
+      
+      if (input.senderType !== "agent" && input.senderType !== "customer") {
+        throw new Error("Invalid message sender: Must be 'agent' or 'customer'");
+      }
+      
+      if (input.senderType === "agent") {
+        input.senderId = ctx.user.id;
+      } else {
+        input.senderId = undefined;
+      }
+      
       const message = await createMessage(input);
+      
       await createActivity({
         organizationId: conversation.organizationId,
-        actorId: ctx.user.id,
-        actorType: "user",
+        actorId: input.senderType === "agent" ? ctx.user.id : conversation.customerId || 0,
+        actorType: input.senderType === "agent" ? "user" : "customer",
         entityType: "conversation",
         entityId: conversation.id,
-        action: input.isInternalNote ? "Internal note added" : "Message sent",
-        description: input.isInternalNote ? "An internal note was added to the conversation" : `Reply sent via ${conversation.channel}`,
+        action: input.isInternalNote ? "Internal note added" : (input.senderType === "agent" ? "Message sent" : "Received message"),
+        description: input.isInternalNote ? "An internal note was added to the conversation" : `Message via ${conversation.channel}`,
       });
+
+      if (input.senderType === "customer" && conversation.aiHandled) {
+        try {
+          console.log(`[AI Router Trigger] Launching auto-reply for conversation ${conversation.id}`);
+          await triggerAIAutoReply(conversation.id, input.content);
+        } catch (err: any) {
+          console.error("AI trigger failed with stack trace:", err.stack || err);
+        }
+      }
+
       return message;
     }),
 
