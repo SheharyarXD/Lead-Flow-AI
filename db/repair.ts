@@ -95,6 +95,27 @@ async function main() {
   await runSql("ALTER TABLE calls ADD UNIQUE INDEX calls_twilioCallSid_unique (twilioCallSid);");
   await runSql("ALTER TABLE calls MODIFY COLUMN status enum('queued','ringing','in_progress','completed','missed','voicemail','failed','busy','no_answer','canceled') NOT NULL DEFAULT 'queued';");
 
+  // 10. Create organizationInvitations table if not exists
+  await runSql(`
+    CREATE TABLE IF NOT EXISTS organizationInvitations (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      organizationId BIGINT UNSIGNED NOT NULL,
+      email VARCHAR(320) NOT NULL,
+      role ENUM('admin','manager','member') NOT NULL DEFAULT 'member',
+      tokenHash VARCHAR(128) NOT NULL UNIQUE,
+      status ENUM('pending','accepted','revoked','expired') NOT NULL DEFAULT 'pending',
+      invitedBy BIGINT UNSIGNED NULL,
+      expiresAt TIMESTAMP NOT NULL,
+      acceptedAt TIMESTAMP NULL,
+      createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+      INDEX invite_org_idx (organizationId),
+      INDEX invite_email_idx (email),
+      INDEX invite_status_idx (status),
+      CONSTRAINT fk_invite_org FOREIGN KEY (organizationId) REFERENCES organizations(id) ON DELETE CASCADE,
+      CONSTRAINT fk_invite_user FOREIGN KEY (invitedBy) REFERENCES users(id) ON DELETE SET NULL
+    ) ENGINE=InnoDB;
+  `);
+
   console.log("Database repair completed successfully!");
   await connection.end();
   process.exit(0);
