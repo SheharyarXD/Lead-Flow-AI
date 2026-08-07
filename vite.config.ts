@@ -12,6 +12,7 @@ export default defineConfig({
     inspectAttr(), react()],
   server: {
     port: 3000,
+    allowedHosts: true,
   },
   resolve: {
     alias: {
