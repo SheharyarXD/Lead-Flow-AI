@@ -74,6 +74,8 @@ export const billingRouter = createRouter({
         minutesLimit: sub?.minutesIncluded ?? 100,
         plan: sub?.plan ?? "starter",
         status: sub?.status ?? "active",
+        discountSummary: sub?.discountSummary ?? null,
+        discountEndsAt: sub?.discountEndsAt ?? null,
       };
     }),
 
@@ -128,6 +130,12 @@ export const billingRouter = createRouter({
           mode: "subscription",
           customer: customerId,
           line_items: [{ price: priceId, quantity: 1 }],
+          // Lets the customer type a discount/promotion code (e.g. a
+          // time-limited "first customers" discount) on Stripe's checkout
+          // page. Codes themselves are created and managed in the Stripe
+          // Dashboard under Product catalog > Coupons — nothing to configure
+          // here per-code.
+          allow_promotion_codes: true,
           success_url: `${hostUrl}/settings?tab=billing&checkout=success`,
           cancel_url: `${hostUrl}/settings?tab=billing&checkout=cancelled`,
           metadata: {

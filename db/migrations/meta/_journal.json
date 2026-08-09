@@ -50,6 +50,13 @@
       "when": 1784607515440,
       "tag": "0006_brave_roland_deschain",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1786268681890,
+      "tag": "0007_wild_lorna_dane",
+      "breakpoints": true
     }
   ]
 }

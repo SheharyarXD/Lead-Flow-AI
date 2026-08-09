@@ -116,6 +116,10 @@ async function main() {
     ) ENGINE=InnoDB;
   `);
 
+  // 11. Add discount snapshot columns to subscriptions (promotion code support)
+  await runSql("ALTER TABLE subscriptions ADD COLUMN discountSummary varchar(255) DEFAULT NULL;");
+  await runSql("ALTER TABLE subscriptions ADD COLUMN discountEndsAt timestamp NULL DEFAULT NULL;");
+
   console.log("Database repair completed successfully!");
   await connection.end();
   process.exit(0);

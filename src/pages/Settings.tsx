@@ -1001,6 +1001,19 @@ export default function Settings() {
                 </Badge>
               </div>
 
+              {usageQuery.data?.discountSummary && (
+                <div className="flex items-center justify-between p-3 rounded-lg bg-emerald-50 border border-emerald-150">
+                  <p className="text-xs font-bold text-emerald-800">
+                    🎉 Discount active: {usageQuery.data.discountSummary}
+                  </p>
+                  {usageQuery.data.discountEndsAt && (
+                    <p className="text-[10px] font-semibold text-emerald-700">
+                      Ends {new Date(usageQuery.data.discountEndsAt).toLocaleDateString("en-US", { dateStyle: "long" })}
+                    </p>
+                  )}
+                </div>
+              )}
+
               {/* Real Quotas Usage Progress Gauges */}
               <div className="space-y-4">
                 <div>

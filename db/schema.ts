@@ -531,6 +531,11 @@ export const subscriptions = mysqlTable(
     leadsLimit: int("leadsLimit").default(100),
     usersLimit: int("usersLimit").default(2),
     features: json("features").$type<string[]>(),
+    // Human-readable snapshot of the active Stripe coupon/promotion code (e.g.
+    // "50% off"), kept in sync from the subscription.updated webhook so the
+    // Billing tab can display it without an extra live Stripe API call.
+    discountSummary: varchar("discountSummary", { length: 255 }),
+    discountEndsAt: timestamp("discountEndsAt"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },

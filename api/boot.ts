@@ -570,7 +570,7 @@ app.post("/api/webhooks/stripe", async (c) => {
 
         console.log(`Organization #${orgId} upgraded to ${plan} plan via Stripe Checkout.`);
       }
-    } else if (event.type === "customer.subscription.updated") {
+    } else if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.created") {
       const sub = event.data.object as import("stripe").default.Subscription;
       const orgId = parseInt(sub.metadata?.organizationId || "0");
       const local = orgId ? await findSubByOrgId(orgId) : await findSubByStripeIds(sub.customer as string, sub.id);
@@ -585,6 +585,24 @@ app.post("/api/webhooks/stripe", async (c) => {
           unpaid: "past_due",
           paused: "paused",
         };
+
+        // Snapshot the active coupon/promotion-code discount (if any) so the
+        // Billing tab can show it without a live Stripe API call. Cleared to
+        // null here too, so an expired/removed discount disappears on the
+        // next webhook delivery instead of lingering stale.
+        const firstDiscount = sub.discounts?.[0];
+        const discountSource = firstDiscount && typeof firstDiscount === "object" ? firstDiscount.source : null;
+        const coupon = discountSource?.coupon && typeof discountSource.coupon === "object" ? discountSource.coupon : null;
+        const discountAmount = coupon?.percent_off != null
+          ? `${coupon.percent_off}% off`
+          : coupon?.amount_off != null
+          ? `${(coupon.amount_off / 100).toFixed(2)} ${(coupon.currency || "").toUpperCase()} off`
+          : null;
+        const discountSummary = discountAmount ? (coupon?.name ? `${discountAmount} (${coupon.name})` : discountAmount) : null;
+        const discountEndsAt = discountSummary && typeof firstDiscount === "object" && firstDiscount.end
+          ? new Date(firstDiscount.end * 1000)
+          : null;
+
         await db
           .update(subscriptions)
           .set({
@@ -593,6 +611,8 @@ app.post("/api/webhooks/stripe", async (c) => {
             cancelAtPeriodEnd: !!sub.cancel_at_period_end,
             currentPeriodStart: item?.current_period_start ? new Date(item.current_period_start * 1000) : local.currentPeriodStart,
             currentPeriodEnd: item?.current_period_end ? new Date(item.current_period_end * 1000) : local.currentPeriodEnd,
+            discountSummary,
+            discountEndsAt,
           })
           .where(eq(subscriptions.id, local.id));
         console.log(`Subscription for Organization #${local.organizationId} updated (status: ${sub.status}).`);
