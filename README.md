@@ -74,6 +74,7 @@ To automate customer plan upgrades:
 4. Choose the following events to listen to:
    * `checkout.session.completed`
 5. Save the endpoint and copy the **Signing Secret** (`whsec_...`). Save it as `STRIPE_WEBHOOK_SECRET` in `.env`.
+6. **Promotion Codes & Discounts**: To support Stripe promotion codes during checkout, configure your discount coupons in the Stripe Dashboard. The webhook will automatically sync active subscription discounts to the local subscription records.
 
 ---
 
