@@ -15,6 +15,9 @@ import {
 import { requireOnboardedOrganizationMembership as requireOrganizationMembership, requireOnboardedOrganizationRole as requireOrganizationRole } from "./queries/organizations";
 import { createActivity } from "./queries/activities";
 import { triggerAIAutoReply } from "./lib/ai-agent";
+import { emitAutomationEvent } from "./lib/automations";
+import { findLeadById } from "./queries/leads";
+import { findCustomerById } from "./queries/customers";
 
 export const conversationRouter = createRouter({
   list: authedQuery
@@ -72,7 +75,7 @@ export const conversationRouter = createRouter({
         return findConversationById(existing.id);
       }
 
-      return createConversation({
+      const conversation = await createConversation({
         organizationId: input.organizationId,
         customerId: input.customerId,
         leadId: input.leadId,
@@ -82,6 +85,23 @@ export const conversationRouter = createRouter({
         assignedTo: input.assignedTo,
         status: "open",
       });
+
+      if (conversation) {
+        const lead = input.leadId ? await findLeadById(input.leadId) : null;
+        const customer = !lead && input.customerId ? await findCustomerById(input.customerId) : null;
+        await emitAutomationEvent("conversation_started", input.organizationId, {
+          conversationId: conversation.id,
+          leadId: input.leadId ?? null,
+          customerId: input.customerId ?? null,
+          channel: input.channel,
+          phone: lead?.phone ?? customer?.phone ?? null,
+          email: lead?.email ?? customer?.email ?? null,
+          firstName: lead?.firstName ?? customer?.firstName ?? null,
+          lastName: lead?.lastName ?? customer?.lastName ?? null,
+        });
+      }
+
+      return conversation;
     }),
 
   update: authedQuery
@@ -124,30 +144,22 @@ export const conversationRouter = createRouter({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      console.log("[DEBUG] conversation.sendMessage ENTERED");
-      console.log(`[DEBUG] senderType=${input.senderType}`);
-      console.log(`[DEBUG] conversationId=${input.conversationId}`);
-
       const conversation = await findConversationById(input.conversationId);
       if (!conversation) throw new Error("Conversation not found");
       await requireOrganizationRole(ctx.user.id, conversation.organizationId, ["owner", "admin", "manager", "member"]);
-      
-      console.log(`[DEBUG] aiHandled=${conversation.aiHandled}`);
-      
+
       if (input.senderType !== "agent" && input.senderType !== "customer") {
         throw new Error("Invalid message sender: Must be 'agent' or 'customer'");
       }
-      
+
       if (input.senderType === "agent") {
         input.senderId = ctx.user.id;
       } else {
         input.senderId = undefined;
       }
-      
-      console.log("[DEBUG] Saving message");
+
       const message = await createMessage(input);
-      console.log(`[DEBUG] Message saved: id=${message?.id}`);
-      
+
       await createActivity({
         organizationId: conversation.organizationId,
         actorId: input.senderType === "agent" ? ctx.user.id : conversation.customerId || 0,
@@ -160,12 +172,9 @@ export const conversationRouter = createRouter({
 
       if (input.senderType === "customer" && conversation.aiHandled) {
         try {
-          console.log("[AI-TRIGGER] About to call triggerAIAutoReply");
           await triggerAIAutoReply(conversation.id, input.content);
-          console.log("[AI-TRIGGER] triggerAIAutoReply completed");
-        } catch (error: any) {
-          console.error("[AI-TRIGGER] FAILED:", error);
-          console.error(error instanceof Error ? error.stack : error);
+        } catch (error) {
+          console.error(`AI auto-reply failed for conversation ${conversation.id}:`, error);
         }
       }
 

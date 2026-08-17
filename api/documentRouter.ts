@@ -11,6 +11,7 @@ import {
 import { MAX_UPLOAD_BYTES, isAllowedUploadMimeType } from "./lib/uploads";
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { localFileUrl, isLocalFileUrl, fileKeyFromLocalUrl, deleteLocalFile } from "./lib/localStorage";
 
 const s3Bucket = process.env.S3_BUCKET;
 const s3Region = process.env.S3_REGION || "us-east-1";
@@ -66,9 +67,14 @@ export const documentRouter = createRouter({
         return { uploadUrl, fileKey, publicUrl, simulated: false };
       }
 
-      // Development fallback when S3 is not configured
-      const simulatedUrl = `https://storage.leadflowai.com/mock/${fileKey}`;
-      return { uploadUrl: null, fileKey, publicUrl: simulatedUrl, simulated: true };
+      // Fallback when S3/R2 isn't configured: real local disk storage, not a
+      // fake placeholder URL. The frontend's upload code already does a PUT
+      // to whatever `uploadUrl` it gets back, so returning a same-origin
+      // route here (instead of null) reuses that exact same code path — no
+      // frontend changes needed. See api/lib/localStorage.ts for why this
+      // replaced the previous data-URL-in-a-TEXT-column approach.
+      const uploadUrl = localFileUrl(fileKey);
+      return { uploadUrl, fileKey, publicUrl: uploadUrl, simulated: true };
     }),
 
   confirmUpload: authedQuery
@@ -165,6 +171,8 @@ export const documentRouter = createRouter({
         } catch (e) {
           console.warn("Failed to delete object from S3 bucket:", e);
         }
+      } else if (isLocalFileUrl(doc.url)) {
+        await deleteLocalFile(fileKeyFromLocalUrl(doc.url));
       }
 
       return { success: true };

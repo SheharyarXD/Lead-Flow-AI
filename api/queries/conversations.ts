@@ -74,7 +74,11 @@ export async function markConversationRead(id: number, organizationId: number) {
 export async function createMessage(data: InferInsertModel<typeof messages>) {
   const [result] = await getDb().insert(messages).values(data).$returningId();
 
-  // Update conversation last message
+  // Update conversation last message. lastMessageSenderType is only set for
+  // customer-visible messages (not internal notes) — the no_response
+  // automation sweep uses it to tell "we replied and they went quiet" apart
+  // from "we're just taking internal notes while waiting," and an internal
+  // note shouldn't reset that clock either way.
   await getDb()
     .update(conversations)
     .set({
@@ -82,6 +86,7 @@ export async function createMessage(data: InferInsertModel<typeof messages>) {
       lastMessagePreview: data.content.slice(0, 200),
       messageCount: sql`${conversations.messageCount} + 1`,
       updatedAt: new Date(),
+      ...(data.isInternalNote ? {} : { lastMessageSenderType: data.senderType }),
     })
     .where(eq(conversations.id, data.conversationId));
 

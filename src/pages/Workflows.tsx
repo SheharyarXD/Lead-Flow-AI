@@ -387,6 +387,8 @@ export default function Workflows() {
                 <option value="call_completed">Voice Call Finished</option>
                 <option value="appointment_scheduled">Booking Scheduled</option>
                 <option value="task_due">Action Task Deadline Reached</option>
+                <option value="follow_up_needed">Lead Gone Cold (3+ Days No Activity)</option>
+                <option value="no_response">No Reply From Customer (24+ Hours)</option>
               </select>
             </div>
 

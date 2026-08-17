@@ -57,6 +57,20 @@
       "when": 1786268681890,
       "tag": "0007_wild_lorna_dane",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1786893597564,
+      "tag": "0008_add_missing_fk_cascades",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "5",
+      "when": 1786898518983,
+      "tag": "0009_add_automation_trigger_tracking_columns",
+      "breakpoints": true
     }
   ]
 }

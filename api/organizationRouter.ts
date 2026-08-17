@@ -31,6 +31,7 @@ import {
 import { findUserByEmail } from "./queries/users";
 import { sendEmail } from "./lib/email";
 import { encryptSecret } from "./lib/crypto";
+import { assertUsersLimitNotExceeded, PLAN_LIMITS } from "./lib/billing";
 
 const SECRET_FIELDS = ["openaiApiKey", "twilioAuthToken", "smtpPass"] as const;
 
@@ -116,9 +117,7 @@ export const organizationRouter = createRouter({
           organizationId: org.id,
           plan: "starter",
           status: "trialing",
-          minutesIncluded: 100,
-          leadsLimit: 100,
-          usersLimit: 2,
+          ...PLAN_LIMITS.starter,
         });
       }
 
@@ -248,6 +247,8 @@ export const organizationRouter = createRouter({
         if (existingMembership) throw new TRPCError({ code: "CONFLICT", message: "This person is already a member of your organization" });
       }
 
+      await assertUsersLimitNotExceeded(input.organizationId);
+
       const org = await findOrganizationById(input.organizationId);
       const rawToken = randomBytes(32).toString("hex");
       const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
@@ -315,6 +316,9 @@ export const organizationRouter = createRouter({
 
       const existingMembership = await findMemberByUserId(invitation.organizationId, ctx.user.id);
       if (!existingMembership) {
+        // Re-checked here (not just at invite time): other invitations may have
+        // been accepted in the meantime and filled the org's remaining seats.
+        await assertUsersLimitNotExceeded(invitation.organizationId);
         await addOrganizationMember({
           organizationId: invitation.organizationId,
           userId: ctx.user.id,

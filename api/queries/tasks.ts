@@ -1,6 +1,6 @@
 import { getDb } from "./connection";
 import { tasks } from "@db/schema";
-import { eq, and, desc, count, lte } from "drizzle-orm";
+import { eq, and, or, desc, count, lte } from "drizzle-orm";
 import type { InferInsertModel } from "drizzle-orm";
 
 export async function findTasksByOrganization(organizationId: number, filters?: {
@@ -84,13 +84,17 @@ export async function getTaskStats(organizationId: number) {
     .from(tasks)
     .where(and(eq(tasks.organizationId, organizationId), eq(tasks.status, "pending")));
 
+  // The scheduler (api/lib/scheduler.ts) now actually flips a task's status to
+  // "overdue" once its due date passes and it fires the task_due automation, so
+  // this must count both that flipped state and any pending/in_progress task
+  // that's simply late but hasn't been swept yet (the sweep runs every 5 minutes,
+  // not continuously).
   const overdue = await getDb()
     .select({ count: count() })
     .from(tasks)
     .where(and(
       eq(tasks.organizationId, organizationId),
-      eq(tasks.status, "pending"),
-      lte(tasks.dueDate, now)
+      or(eq(tasks.status, "overdue"), and(eq(tasks.status, "pending"), lte(tasks.dueDate, now)))
     ));
 
   const completed = await getDb()

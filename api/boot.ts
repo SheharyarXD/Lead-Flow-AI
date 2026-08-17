@@ -20,16 +20,23 @@ app.use("/api/trpc/*", async (c) => {
 
 // ── Inbound Webhooks for SMS, Email & Voice ──
 import { getDb } from "./queries/connection";
-import { customers, conversations, activities, organizations, subscriptions, calls, leads, stripeEvents } from "@db/schema";
+import { customers, conversations, activities, organizations, subscriptions, calls, leads, stripeEvents, documents } from "@db/schema";
 import { eq, and } from "drizzle-orm";
 import { createMessage } from "./queries/conversations";
 import { findCallByTwilioSid, findCallById, createCall, updateCall } from "./queries/calls";
+import { createTask } from "./queries/tasks";
 import { requireOrganizationMembership as requireCallOrgMembership } from "./queries/organizations";
 import { triggerAIAutoReply } from "./lib/ai-agent";
 import { decryptSecret } from "./lib/crypto";
 import { authenticateRequest } from "./kimi/auth";
+import { onCallCompleted } from "./lib/callEvents";
+import { startScheduler } from "./lib/scheduler";
+import { MAX_UPLOAD_BYTES, isAllowedUploadMimeType } from "./lib/uploads";
+import { saveLocalFile, readLocalFile } from "./lib/localStorage";
 import twilio from "twilio";
 import { timingSafeEqual } from "crypto";
+
+startScheduler();
 
 function safeCompare(a: string, b: string): boolean {
   const bufA = Buffer.from(a);
@@ -308,17 +315,101 @@ app.post("/api/webhooks/voice", async (c) => {
     console.error("Error recording inbound voice call:", error);
   }
 
-  // MVP scope: no per-agent phone routing exists yet, so inbound calls are
-  // handled by the AI receptionist greeting + voicemail rather than bridged
-  // to a live line. See the Phase 3 report for what a real transfer-to-agent
-  // flow would additionally require.
+  // By design, not a gap: this SOW scopes "Calling/VoIP integration" and
+  // "Call logs & recordings" — there's no line item for bridging an inbound
+  // call to a live staff line, and the product is an AI receptionist, not a
+  // PBX. Building real call transfer (ringing a staff member's phone/browser,
+  // handling no-answer, etc.) would be new scope, not a fix. What this does
+  // guarantee instead: every voicemail becomes a logged, recorded call AND an
+  // actionable callback task for staff — see the `action` callback below.
   const hostUrl = process.env.PUBLIC_URL || "http://localhost:3000";
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Say voice="alice">Thank you for calling${organization.name ? ` ${escapeXml(organization.name)}` : ""}. Our AI receptionist is taking your call, please leave a message after the tone.</Say>
-    <Record maxLength="120" finishOnKey="#" recordingStatusCallback="${hostUrl}/api/webhooks/voice/recording" />
+    <Record maxLength="120" finishOnKey="#" recordingStatusCallback="${hostUrl}/api/webhooks/voice/recording" action="${hostUrl}/api/webhooks/voice/recording-complete" />
 </Response>`;
   return c.text(twiml);
+});
+
+// ── Inbound Voicemail Completion ──
+// Fired synchronously by Twilio as a direct consequence of the <Record
+// action="..."> above — guaranteed to happen, unlike relying solely on the
+// account/number-level "call status changed" webhook configured in the
+// Twilio Console (which this codebase has no way to verify is actually set
+// up). Without this, an inbound voicemail call had no deterministic path to
+// ever reach status "completed", which meant call_completed automations and
+// minute-usage tracking (onCallCompleted) never fired for inbound calls at
+// all — only outbound ones. This closes that gap, and also guarantees a
+// callback task gets created so a voicemail is never just a recording nobody
+// follows up on.
+app.post("/api/webhooks/voice/recording-complete", async (c) => {
+  const body = await c.req.parseBody();
+  const callSid = (body.CallSid as string) || "";
+  const recordingUrl = (body.RecordingUrl as string) || "";
+  const recordingSid = (body.RecordingSid as string) || "";
+  const recordingDuration = parseInt((body.RecordingDuration as string) || "0", 10);
+  const callDuration = parseInt((body.CallDuration as string) || `${recordingDuration}`, 10);
+
+  if (!callSid) return c.text('<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>');
+
+  const existingCall = await findCallByTwilioSid(callSid);
+  if (!existingCall) return c.text('<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>');
+
+  const org = await getDb().query.organizations.findFirst({ where: eq(organizations.id, existingCall.organizationId) });
+  const { valid } = await resolveVoiceOrgAndVerify(c, body, org?.phone || "");
+  if (!valid) return c.text("Unauthorized", 401);
+
+  // Recording-specific fields are safe to write unconditionally (idempotent
+  // even if another call site already finalized this call) — status is not,
+  // so that's left entirely to onCallCompleted's atomic claim below.
+  await updateCall(existingCall.id, existingCall.organizationId, {
+    recordingUrl: recordingUrl || existingCall.recordingUrl || undefined,
+    recordingSid: recordingSid || existingCall.recordingSid || undefined,
+    recordingDuration: recordingDuration || existingCall.recordingDuration || undefined,
+    transcriptStatus: recordingUrl ? "pending" : existingCall.transcriptStatus,
+  });
+
+  const won = await onCallCompleted(
+    existingCall.organizationId,
+    existingCall.id,
+    existingCall.leadId,
+    existingCall.customerId,
+    existingCall.phoneNumber,
+    existingCall.direction,
+    callDuration
+  );
+
+  if (won) {
+    await getDb().insert(activities).values({
+      organizationId: existingCall.organizationId,
+      actorType: "system",
+      entityType: "call",
+      entityId: existingCall.id,
+      action: "Call completed",
+      description: recordingDuration > 0
+        ? `Voicemail left, ${Math.floor(recordingDuration / 60)}m ${recordingDuration % 60}s`
+        : "Caller hung up without leaving a message",
+    });
+
+    // A real message was left — make sure it actually gets followed up on,
+    // independent of whether this org has configured a call_completed
+    // automation. A missed call nobody hears back from is a lost lead.
+    if (recordingDuration > 0) {
+      await createTask({
+        organizationId: existingCall.organizationId,
+        customerId: existingCall.customerId,
+        leadId: existingCall.leadId,
+        title: `Return call — voicemail from ${existingCall.phoneNumber}`,
+        description: "Caller left a voicemail. Recording is attached to this call.",
+        type: "call",
+        status: "pending",
+        priority: "high",
+        dueDate: new Date(Date.now() + 4 * 60 * 60 * 1000),
+      });
+    }
+  }
+
+  return c.text('<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>');
 });
 
 // ── Voice Call Status Webhook ──
@@ -345,22 +436,50 @@ app.post("/api/webhooks/voice/status", async (c) => {
   if (!valid) return c.text("Unauthorized", 401);
 
   const mappedStatus = mapTwilioCallStatus(callStatus);
-  const updateData: Record<string, unknown> = { status: mappedStatus };
-  if (duration > 0) updateData.duration = duration;
-  if (["completed", "busy", "failed", "no_answer", "canceled"].includes(mappedStatus)) {
-    updateData.endedAt = new Date();
-  }
-  await updateCall(existingCall.id, existingCall.organizationId, updateData);
 
-  if (mappedStatus === "completed" || mappedStatus === "no_answer" || mappedStatus === "busy" || mappedStatus === "failed") {
-    await getDb().insert(activities).values({
-      organizationId: existingCall.organizationId,
-      actorType: "system",
-      entityType: "call",
-      entityId: existingCall.id,
-      action: `Call ${mappedStatus.replace("_", " ")}`,
-      description: duration > 0 ? `Duration: ${Math.floor(duration / 60)}m ${duration % 60}s` : undefined,
-    });
+  if (mappedStatus === "completed") {
+    // onCallCompleted owns the status="completed" flip (and its own guard
+    // against firing twice) — this handler must not set it separately, or
+    // the two would race each other for the exact same field.
+    if (duration > 0) await updateCall(existingCall.id, existingCall.organizationId, { duration });
+
+    const won = await onCallCompleted(
+      existingCall.organizationId,
+      existingCall.id,
+      existingCall.leadId,
+      existingCall.customerId,
+      existingCall.phoneNumber,
+      existingCall.direction,
+      duration
+    );
+    if (won) {
+      await getDb().insert(activities).values({
+        organizationId: existingCall.organizationId,
+        actorType: "system",
+        entityType: "call",
+        entityId: existingCall.id,
+        action: "Call completed",
+        description: duration > 0 ? `Duration: ${Math.floor(duration / 60)}m ${duration % 60}s` : undefined,
+      });
+    }
+  } else {
+    const updateData: Record<string, unknown> = { status: mappedStatus };
+    if (duration > 0) updateData.duration = duration;
+    if (["busy", "failed", "no_answer", "canceled"].includes(mappedStatus)) {
+      updateData.endedAt = new Date();
+    }
+    await updateCall(existingCall.id, existingCall.organizationId, updateData);
+
+    if (["no_answer", "busy", "failed"].includes(mappedStatus)) {
+      await getDb().insert(activities).values({
+        organizationId: existingCall.organizationId,
+        actorType: "system",
+        entityType: "call",
+        entityId: existingCall.id,
+        action: `Call ${mappedStatus.replace("_", " ")}`,
+        description: duration > 0 ? `Duration: ${Math.floor(duration / 60)}m ${duration % 60}s` : undefined,
+      });
+    }
   }
 
   return c.text("OK");
@@ -563,8 +682,7 @@ app.post("/api/webhooks/stripe", async (c) => {
             status: "active",
             stripeCustomerId: session.customer as string,
             stripeSubscriptionId: session.subscription as string,
-            leadsLimit: limits.leadsLimit,
-            minutesIncluded: limits.minutesIncluded,
+            ...limits,
           })
           .where(eq(subscriptions.organizationId, orgId));
 
@@ -687,6 +805,94 @@ app.get("/api/recordings/:callId", async (c) => {
     status: 200,
     headers: {
       "Content-Type": "audio/mpeg",
+      "Cache-Control": "private, max-age=3600",
+    },
+  });
+});
+
+// ── Local Document Storage (fallback when S3/R2 isn't configured) ──
+// documentRouter.getPresignedUploadUrl hands out a URL under this path
+// instead of null when there's no S3 client, and the frontend's existing
+// upload code does a same PUT it would do against a real presigned S3 URL —
+// see api/lib/localStorage.ts for the full reasoning.
+
+// Every fileKey this app generates is "orgs/{organizationId}/..." — parsed
+// here to re-check org membership independently of whatever the client
+// claims, since there's no documents row yet to authorize against at upload
+// time (that only gets created afterward, via document.confirmUpload).
+function orgIdFromFileKey(fileKey: string): number | null {
+  const match = /^orgs\/(\d+)\//.exec(fileKey);
+  return match ? parseInt(match[1], 10) : null;
+}
+
+app.put("/api/uploads/local/*", async (c) => {
+  let user;
+  try {
+    user = await authenticateRequest(c.req.raw.headers);
+  } catch {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  const fileKey = c.req.path.replace("/api/uploads/local/", "");
+  const orgId = orgIdFromFileKey(fileKey);
+  if (!orgId) return c.json({ error: "Invalid file key" }, 400);
+
+  try {
+    await requireCallOrgMembership(user.id, orgId);
+  } catch {
+    return c.json({ error: "Forbidden" }, 403);
+  }
+
+  // Re-enforced here, not just trusted from the earlier getPresignedUploadUrl
+  // call — this endpoint accepts a raw request body directly, so nothing
+  // stops a client from skipping that step and PUTing straight to it.
+  const contentType = c.req.header("content-type") || "";
+  if (!isAllowedUploadMimeType(contentType)) {
+    return c.json({ error: "This file type is not allowed" }, 400);
+  }
+
+  const body = await c.req.arrayBuffer();
+  if (body.byteLength > MAX_UPLOAD_BYTES) {
+    return c.json({ error: `File exceeds the ${MAX_UPLOAD_BYTES / (1024 * 1024)}MB upload limit` }, 400);
+  }
+
+  await saveLocalFile(fileKey, Buffer.from(body));
+  return c.json({ success: true });
+});
+
+app.get("/api/uploads/local/*", async (c) => {
+  let user;
+  try {
+    user = await authenticateRequest(c.req.raw.headers);
+  } catch {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  const fileKey = c.req.path.replace("/api/uploads/local/", "");
+
+  // Authorize against the real documents row (same pattern as the recordings
+  // proxy above) rather than trusting the org id embedded in the URL alone —
+  // this is what actually confirms the file belongs to an org this user is a
+  // member of, and gives us the real filename/mime type for the response.
+  const doc = await getDb().query.documents.findFirst({
+    where: (d, { like }) => like(d.url, `%${fileKey}`),
+  });
+  if (!doc) return c.json({ error: "File not found" }, 404);
+
+  try {
+    await requireCallOrgMembership(user.id, doc.organizationId);
+  } catch {
+    return c.json({ error: "Forbidden" }, 403);
+  }
+
+  const data = await readLocalFile(fileKey);
+  if (!data) return c.json({ error: "File not found on disk" }, 404);
+
+  return new Response(data, {
+    status: 200,
+    headers: {
+      "Content-Type": doc.mimeType || "application/octet-stream",
+      "Content-Disposition": `attachment; filename="${doc.fileName.replace(/"/g, "")}"`,
       "Cache-Control": "private, max-age=3600",
     },
   });

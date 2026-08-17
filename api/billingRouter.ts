@@ -1,15 +1,15 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { createRouter, authedQuery } from "./middleware";
-import { eq, count } from "drizzle-orm";
-import { subscriptions, leads, organizationMembers } from "@db/schema";
+import { eq } from "drizzle-orm";
+import { subscriptions } from "@db/schema";
 import { getDb } from "./queries/connection";
 import {
   requireOnboardedOrganizationMembership as requireOrganizationMembership,
   requireOnboardedOrganizationRole as requireOrganizationRole,
 } from "./queries/organizations";
 import { env } from "./lib/env";
-import { PLAN_PRICES, PLAN_LIMITS } from "./lib/billing";
+import { PLAN_PRICES, PLAN_LIMITS, getUsageSnapshot } from "./lib/billing";
 import Stripe from "stripe";
 
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
@@ -28,14 +28,15 @@ export const billingRouter = createRouter({
 
       if (!sub) {
         // Create default starter subscription if missing
+        const starterLimits = PLAN_LIMITS.starter;
         await db.insert(subscriptions).values({
           organizationId: input.organizationId,
           plan: "starter",
           status: "active",
-          minutesIncluded: 100,
+          minutesIncluded: starterLimits.minutesIncluded,
           minutesUsed: 0,
-          leadsLimit: 100,
-          usersLimit: 5,
+          leadsLimit: starterLimits.leadsLimit,
+          usersLimit: starterLimits.usersLimit,
         });
         sub = await db.query.subscriptions.findFirst({
           where: eq(subscriptions.organizationId, input.organizationId),
@@ -49,34 +50,7 @@ export const billingRouter = createRouter({
     .input(z.object({ organizationId: z.number() }))
     .query(async ({ input, ctx }) => {
       await requireOrganizationMembership(ctx.user.id, input.organizationId);
-      const db = getDb();
-
-      const [leadsRes] = await db
-        .select({ count: count() })
-        .from(leads)
-        .where(eq(leads.organizationId, input.organizationId));
-
-      const [usersRes] = await db
-        .select({ count: count() })
-        .from(organizationMembers)
-        .where(eq(organizationMembers.organizationId, input.organizationId));
-
-      const sub = await db.query.subscriptions.findFirst({
-        where: eq(subscriptions.organizationId, input.organizationId),
-      });
-
-      return {
-        leadsUsed: leadsRes?.count ?? 0,
-        leadsLimit: sub?.leadsLimit ?? 100,
-        usersUsed: usersRes?.count ?? 1,
-        usersLimit: sub?.usersLimit ?? 5,
-        minutesUsed: sub?.minutesUsed ?? 0,
-        minutesLimit: sub?.minutesIncluded ?? 100,
-        plan: sub?.plan ?? "starter",
-        status: sub?.status ?? "active",
-        discountSummary: sub?.discountSummary ?? null,
-        discountEndsAt: sub?.discountEndsAt ?? null,
-      };
+      return getUsageSnapshot(input.organizationId);
     }),
 
   createCheckoutSession: authedQuery
@@ -168,15 +142,13 @@ export const billingRouter = createRouter({
       }
 
       const simulatedUrl = `${hostUrl}/settings?tab=billing&checkout=success&simulated_plan=${input.plan}`;
-      const limits = PLAN_LIMITS[input.plan];
 
       await db
         .update(subscriptions)
         .set({
           plan: input.plan,
           status: "active",
-          leadsLimit: limits.leadsLimit,
-          minutesIncluded: limits.minutesIncluded,
+          ...PLAN_LIMITS[input.plan],
         })
         .where(eq(subscriptions.organizationId, input.organizationId));
 

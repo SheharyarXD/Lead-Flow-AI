@@ -14,6 +14,7 @@ import { hashPassword, verifyPassword } from "./lib/crypto";
 import { signSessionToken } from "./kimi/session";
 import { createHash, randomBytes } from "crypto";
 import { consumePasswordResetToken, createPasswordResetToken, updateUserPassword } from "./queries/users";
+import { PLAN_LIMITS } from "./lib/billing";
 
 const passwordSchema = z.string().min(8, "Password must be at least 8 characters")
   .refine((value) => /[A-Z]/.test(value), "Password must contain at least one capital letter")
@@ -122,11 +123,9 @@ export const authRouter = createRouter({
           organizationId: org.id,
           plan: "starter",
           status: "active",
-          minutesIncluded: 100,
           minutesUsed: 0,
-          leadsLimit: 100,
-          usersLimit: 2,
           features: ["ai_calls", "sms", "email"],
+          ...PLAN_LIMITS.starter,
         });
       }
 

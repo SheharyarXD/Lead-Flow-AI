@@ -120,6 +120,64 @@ async function main() {
   await runSql("ALTER TABLE subscriptions ADD COLUMN discountSummary varchar(255) DEFAULT NULL;");
   await runSql("ALTER TABLE subscriptions ADD COLUMN discountEndsAt timestamp NULL DEFAULT NULL;");
 
+  // 12. Add the foreign key constraints db/schema.ts already declares via
+  // .references(...) but that were never actually applied to this database —
+  // it was built up entirely through the ad-hoc ALTER/CREATE statements above
+  // rather than a real migration, so only organizationInvitations (added with
+  // explicit CONSTRAINT clauses in step 10) ever got real FKs. Every other
+  // organization-scoped table was silently missing them, which let deleting an
+  // organization/lead/customer leave orphaned rows behind indefinitely instead
+  // of cascading. These match schema.ts's onDelete behavior exactly — CASCADE
+  // where the child row makes no sense without its parent, SET NULL where the
+  // relation is just a reference (e.g. "assigned to this now-deleted user").
+  await runSql("ALTER TABLE passwordResetTokens ADD CONSTRAINT fk_reset_user FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE;");
+
+  await runSql("ALTER TABLE organizationMembers ADD CONSTRAINT fk_member_org FOREIGN KEY (organizationId) REFERENCES organizations(id) ON DELETE CASCADE;");
+  await runSql("ALTER TABLE organizationMembers ADD CONSTRAINT fk_member_user FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE;");
+
+  await runSql("ALTER TABLE customers ADD CONSTRAINT fk_customer_org FOREIGN KEY (organizationId) REFERENCES organizations(id) ON DELETE CASCADE;");
+
+  await runSql("ALTER TABLE leads ADD CONSTRAINT fk_lead_org FOREIGN KEY (organizationId) REFERENCES organizations(id) ON DELETE CASCADE;");
+  await runSql("ALTER TABLE leads ADD CONSTRAINT fk_lead_customer FOREIGN KEY (customerId) REFERENCES customers(id) ON DELETE SET NULL;");
+  await runSql("ALTER TABLE leads ADD CONSTRAINT fk_lead_assigned FOREIGN KEY (assignedTo) REFERENCES users(id) ON DELETE SET NULL;");
+
+  await runSql("ALTER TABLE conversations ADD CONSTRAINT fk_conv_org FOREIGN KEY (organizationId) REFERENCES organizations(id) ON DELETE CASCADE;");
+  await runSql("ALTER TABLE conversations ADD CONSTRAINT fk_conv_customer FOREIGN KEY (customerId) REFERENCES customers(id) ON DELETE SET NULL;");
+  await runSql("ALTER TABLE conversations ADD CONSTRAINT fk_conv_lead FOREIGN KEY (leadId) REFERENCES leads(id) ON DELETE SET NULL;");
+  await runSql("ALTER TABLE conversations ADD CONSTRAINT fk_conv_assigned FOREIGN KEY (assignedTo) REFERENCES users(id) ON DELETE SET NULL;");
+
+  await runSql("ALTER TABLE messages ADD CONSTRAINT fk_message_conv FOREIGN KEY (conversationId) REFERENCES conversations(id) ON DELETE CASCADE;");
+
+  await runSql("ALTER TABLE calls ADD CONSTRAINT fk_call_org FOREIGN KEY (organizationId) REFERENCES organizations(id) ON DELETE CASCADE;");
+  await runSql("ALTER TABLE calls ADD CONSTRAINT fk_call_customer FOREIGN KEY (customerId) REFERENCES customers(id) ON DELETE SET NULL;");
+  await runSql("ALTER TABLE calls ADD CONSTRAINT fk_call_lead FOREIGN KEY (leadId) REFERENCES leads(id) ON DELETE SET NULL;");
+  await runSql("ALTER TABLE calls ADD CONSTRAINT fk_call_user FOREIGN KEY (userId) REFERENCES users(id) ON DELETE SET NULL;");
+
+  await runSql("ALTER TABLE appointments ADD CONSTRAINT fk_appt_org FOREIGN KEY (organizationId) REFERENCES organizations(id) ON DELETE CASCADE;");
+  await runSql("ALTER TABLE appointments ADD CONSTRAINT fk_appt_customer FOREIGN KEY (customerId) REFERENCES customers(id) ON DELETE SET NULL;");
+  await runSql("ALTER TABLE appointments ADD CONSTRAINT fk_appt_lead FOREIGN KEY (leadId) REFERENCES leads(id) ON DELETE SET NULL;");
+  await runSql("ALTER TABLE appointments ADD CONSTRAINT fk_appt_assigned FOREIGN KEY (assignedTo) REFERENCES users(id) ON DELETE SET NULL;");
+
+  await runSql("ALTER TABLE tasks ADD CONSTRAINT fk_task_org FOREIGN KEY (organizationId) REFERENCES organizations(id) ON DELETE CASCADE;");
+  await runSql("ALTER TABLE tasks ADD CONSTRAINT fk_task_customer FOREIGN KEY (customerId) REFERENCES customers(id) ON DELETE SET NULL;");
+  await runSql("ALTER TABLE tasks ADD CONSTRAINT fk_task_lead FOREIGN KEY (leadId) REFERENCES leads(id) ON DELETE SET NULL;");
+  await runSql("ALTER TABLE tasks ADD CONSTRAINT fk_task_assigned FOREIGN KEY (assignedTo) REFERENCES users(id) ON DELETE SET NULL;");
+
+  await runSql("ALTER TABLE automations ADD CONSTRAINT fk_automation_org FOREIGN KEY (organizationId) REFERENCES organizations(id) ON DELETE CASCADE;");
+  await runSql("ALTER TABLE automations ADD CONSTRAINT fk_automation_creator FOREIGN KEY (createdBy) REFERENCES users(id) ON DELETE SET NULL;");
+
+  await runSql("ALTER TABLE subscriptions ADD CONSTRAINT fk_sub_org FOREIGN KEY (organizationId) REFERENCES organizations(id) ON DELETE CASCADE;");
+
+  await runSql("ALTER TABLE knowledgeBase ADD CONSTRAINT fk_kb_org FOREIGN KEY (organizationId) REFERENCES organizations(id) ON DELETE CASCADE;");
+  await runSql("ALTER TABLE knowledgeBase ADD CONSTRAINT fk_kb_creator FOREIGN KEY (createdBy) REFERENCES users(id) ON DELETE SET NULL;");
+
+  await runSql("ALTER TABLE activities ADD CONSTRAINT fk_activity_org FOREIGN KEY (organizationId) REFERENCES organizations(id) ON DELETE CASCADE;");
+
+  await runSql("ALTER TABLE documents ADD CONSTRAINT fk_doc_org FOREIGN KEY (organizationId) REFERENCES organizations(id) ON DELETE CASCADE;");
+  await runSql("ALTER TABLE documents ADD CONSTRAINT fk_doc_customer FOREIGN KEY (customerId) REFERENCES customers(id) ON DELETE SET NULL;");
+  await runSql("ALTER TABLE documents ADD CONSTRAINT fk_doc_lead FOREIGN KEY (leadId) REFERENCES leads(id) ON DELETE SET NULL;");
+  await runSql("ALTER TABLE documents ADD CONSTRAINT fk_doc_uploader FOREIGN KEY (uploadedBy) REFERENCES users(id) ON DELETE SET NULL;");
+
   console.log("Database repair completed successfully!");
   await connection.end();
   process.exit(0);

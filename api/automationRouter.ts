@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { createRouter, authedQuery } from "./middleware";
 import { automations } from "@db/schema";
 import {
@@ -10,6 +11,9 @@ import {
   getAutomationStats,
 } from "./queries/automations";
 import { requireOnboardedOrganizationMembership as requireOrganizationMembership, requireOnboardedOrganizationRole as requireOrganizationRole } from "./queries/organizations";
+import { runAutomationById } from "./lib/automations";
+import { findLeadById } from "./queries/leads";
+import { findCustomerById } from "./queries/customers";
 
 export const automationRouter = createRouter({
   list: authedQuery
@@ -98,5 +102,31 @@ export const automationRouter = createRouter({
     .query(async ({ input, ctx }) => {
       await requireOrganizationMembership(ctx.user.id, input.organizationId);
       return getAutomationStats(input.organizationId);
+    }),
+
+  // Manual test-run: fires this exact rule's actions right now against an
+  // optional lead/customer, regardless of its configured trigger — the "manual"
+  // trigger value in the schema's enum, and a straightforward way to verify a
+  // rule works without waiting for its real trigger event.
+  runNow: authedQuery
+    .input(z.object({ id: z.number(), leadId: z.number().optional(), customerId: z.number().optional() }))
+    .mutation(async ({ input, ctx }) => {
+      const auto = await findAutomationById(input.id);
+      if (!auto) throw new TRPCError({ code: "NOT_FOUND", message: "Automation not found" });
+      await requireOrganizationRole(ctx.user.id, auto.organizationId, ["owner", "admin", "manager"]);
+
+      const lead = input.leadId ? await findLeadById(input.leadId) : null;
+      const customer = !lead && input.customerId ? await findCustomerById(input.customerId) : null;
+
+      await runAutomationById(auto, {
+        leadId: input.leadId ?? null,
+        customerId: input.customerId ?? null,
+        phone: lead?.phone ?? customer?.phone ?? null,
+        email: lead?.email ?? customer?.email ?? null,
+        firstName: lead?.firstName ?? customer?.firstName ?? null,
+        lastName: lead?.lastName ?? customer?.lastName ?? null,
+      });
+
+      return findAutomationById(input.id);
     }),
 });

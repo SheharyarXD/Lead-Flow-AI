@@ -13,6 +13,8 @@ import {
 import { requireOnboardedOrganizationMembership as requireOrganizationMembership, requireOnboardedOrganizationRole as requireOrganizationRole } from "./queries/organizations";
 import { createTask } from "./queries/tasks";
 import { createActivity } from "./queries/activities";
+import { assertLeadsLimitNotExceeded } from "./lib/billing";
+import { emitAutomationEvent } from "./lib/automations";
 
 export const leadRouter = createRouter({
   list: authedQuery
@@ -82,6 +84,7 @@ export const leadRouter = createRouter({
     )
     .mutation(async ({ input, ctx }) => {
       await requireOrganizationRole(ctx.user.id, input.organizationId, ["owner", "admin", "manager", "member"]);
+      await assertLeadsLimitNotExceeded(input.organizationId);
       const lead = await createLead({
         organizationId: input.organizationId,
         firstName: input.firstName,
@@ -102,6 +105,17 @@ export const leadRouter = createRouter({
       if (lead) {
         await createTask({ organizationId: lead.organizationId, leadId: lead.id, title: `Follow up with ${lead.firstName} ${lead.lastName}`, type: "follow_up", priority: lead.priority ?? "medium", status: "pending", assignedTo: lead.assignedTo, dueDate: new Date(Date.now() + 24 * 60 * 60 * 1000) });
         await createActivity({ organizationId: lead.organizationId, actorId: ctx.user.id, actorType: "user", entityType: "lead", entityId: lead.id, action: "Lead created", description: `Lead ${lead.firstName} ${lead.lastName} created with a follow-up task` });
+        await emitAutomationEvent("lead_created", lead.organizationId, {
+          leadId: lead.id,
+          customerId: lead.customerId ?? null,
+          phone: lead.phone ?? null,
+          email: lead.email ?? null,
+          firstName: lead.firstName,
+          lastName: lead.lastName,
+          status: lead.status,
+          source: lead.source,
+          priority: lead.priority,
+        });
       }
       return lead;
     }),
@@ -139,6 +153,18 @@ export const leadRouter = createRouter({
         action: "Lead updated",
         description: `Lead ${lead.firstName} ${lead.lastName} updated`,
       });
+      if (updated && data.status && data.status !== lead.status) {
+        await emitAutomationEvent("lead_status_changed", lead.organizationId, {
+          leadId: updated.id,
+          customerId: updated.customerId ?? null,
+          phone: updated.phone ?? null,
+          email: updated.email ?? null,
+          firstName: updated.firstName,
+          lastName: updated.lastName,
+          status: updated.status,
+          previousStatus: lead.status,
+        });
+      }
       return updated;
     }),
 

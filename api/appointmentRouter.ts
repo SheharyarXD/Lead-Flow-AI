@@ -11,6 +11,9 @@ import {
 } from "./queries/appointments";
 import { requireOnboardedOrganizationMembership as requireOrganizationMembership, requireOnboardedOrganizationRole as requireOrganizationRole } from "./queries/organizations";
 import { createActivity } from "./queries/activities";
+import { emitAutomationEvent } from "./lib/automations";
+import { findLeadById } from "./queries/leads";
+import { findCustomerById } from "./queries/customers";
 
 export const appointmentRouter = createRouter({
   list: authedQuery
@@ -81,6 +84,20 @@ export const appointmentRouter = createRouter({
           entityId: appt.id,
           action: "Appointment scheduled",
           description: `"${appt.title}" scheduled for ${new Date(appt.startTime).toLocaleString()}`,
+        });
+
+        const lead = input.leadId ? await findLeadById(input.leadId) : null;
+        const customer = !lead && input.customerId ? await findCustomerById(input.customerId) : null;
+        await emitAutomationEvent("appointment_scheduled", input.organizationId, {
+          appointmentId: appt.id,
+          leadId: input.leadId ?? null,
+          customerId: input.customerId ?? null,
+          phone: lead?.phone ?? customer?.phone ?? null,
+          email: lead?.email ?? customer?.email ?? null,
+          firstName: lead?.firstName ?? customer?.firstName ?? null,
+          lastName: lead?.lastName ?? customer?.lastName ?? null,
+          title: appt.title,
+          startTime: appt.startTime,
         });
       }
       return appt;

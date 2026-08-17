@@ -14,7 +14,9 @@ import { findCustomerById } from "./queries/customers";
 import { findOrganizationById, requireOnboardedOrganizationMembership as requireOrganizationMembership, requireOnboardedOrganizationRole as requireOrganizationRole } from "./queries/organizations";
 import { createActivity } from "./queries/activities";
 import { decryptSecret } from "./lib/crypto";
-import { generateTwilioVoiceToken } from "./lib/twilio";
+import { generateTwilioVoiceToken, resolveTwilioCallConfig } from "./lib/twilio";
+import { assertMinutesNotExceeded } from "./lib/billing";
+import { onCallCompleted } from "./lib/callEvents";
 
 // The membership row returned by requireOrganizationRole/Membership has no
 // Twilio fields on it — those live on the organizations row itself. This
@@ -142,6 +144,7 @@ export const callRouter = createRouter({
     )
     .mutation(async ({ input, ctx }) => {
       await requireOrganizationRole(ctx.user.id, input.organizationId, ["owner", "admin", "manager", "member"]);
+      await assertMinutesNotExceeded(input.organizationId);
 
       // A customer/lead ID supplied by the client must actually belong to this
       // organization — otherwise a call could get linked to another tenant's record.
@@ -159,7 +162,7 @@ export const callRouter = createRouter({
       }
 
       const creds = await getDecryptedTwilioCredentials(input.organizationId);
-      const isConfigured = !!(creds.accountSid && creds.authToken && (creds.phoneNumber || creds.organizationPhone));
+      const { isConfigured, reason } = resolveTwilioCallConfig(creds);
 
       // The DB record is created here, before any real Twilio connection
       // exists. The browser then connects via the Twilio Voice SDK
@@ -187,7 +190,7 @@ export const callRouter = createRouter({
         entityType: "call",
         entityId: callRecord.id,
         action: "Outbound call started",
-        description: `Called ${input.phoneNumber}${isConfigured ? "" : " (simulated — Twilio is not configured for this organization)"}`,
+        description: `Called ${input.phoneNumber}${isConfigured ? "" : ` (simulated — ${reason})`}`,
       });
 
       return { call: callRecord, simulated: !isConfigured };
@@ -213,16 +216,19 @@ export const callRouter = createRouter({
         }
       }
 
-      // The authoritative status/duration normally comes from the Twilio status
+      // The authoritative status/duration normally comes from a Twilio
       // webhook; this is a fallback so the UI doesn't hang if the callback is
       // slow to arrive or Twilio isn't configured (simulated mode).
+      // onCallCompleted owns the actual "completed" claim (atomically, so it
+      // can never double-fire against a webhook racing this same request) —
+      // this only needs to skip its own duration/endedAt write if the call
+      // was already terminal before we got here.
       if (call.status !== "completed" && call.status !== "failed") {
-        const duration = call.startedAt ? Math.round((Date.now() - new Date(call.startedAt).getTime()) / 1000) : null;
-        await updateCall(call.id, call.organizationId, {
-          status: "completed",
-          endedAt: new Date(),
-          duration: duration ?? undefined,
-        });
+        const duration = call.startedAt ? Math.round((Date.now() - new Date(call.startedAt).getTime()) / 1000) : 0;
+        const won = await onCallCompleted(call.organizationId, call.id, call.leadId, call.customerId, call.phoneNumber, call.direction, duration);
+        if (won) {
+          await updateCall(call.id, call.organizationId, { duration: duration || undefined });
+        }
       }
 
       return findCallById(call.id);

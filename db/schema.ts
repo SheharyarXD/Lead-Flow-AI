@@ -246,6 +246,12 @@ export const leads = mysqlTable(
     customFields: json("customFields").$type<Record<string, unknown>>(),
     lastActivityAt: timestamp("lastActivityAt"),
     convertedAt: timestamp("convertedAt"),
+    // Dedup marker for the follow_up_needed automation trigger — set the
+    // moment it fires for this lead, cleared implicitly by comparing against
+    // lastActivityAt (see api/lib/scheduler.ts) so a lead that goes stale,
+    // gets touched, then goes stale again can trigger it more than once
+    // without needing separate "clear the flag" bookkeeping anywhere.
+    followUpFlaggedAt: timestamp("followUpFlaggedAt"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },
@@ -288,9 +294,20 @@ export const conversations = mysqlTable(
     aiSummary: text("aiSummary"),
     lastMessageAt: timestamp("lastMessageAt"),
     lastMessagePreview: text("lastMessagePreview"),
+    // Who sent the most recent message — kept in sync by createMessage()
+    // whenever a message is added. Lets the no_response automation sweep
+    // (api/lib/scheduler.ts) find "we messaged them and they went quiet"
+    // conversations with a plain column check instead of a per-conversation
+    // subquery into messages for every sweep tick.
+    lastMessageSenderType: mysqlEnum("lastMessageSenderType", ["customer", "agent", "ai", "system"]),
     messageCount: int("messageCount").default(0),
     unreadCount: int("unreadCount").default(0),
     tags: json("tags").$type<string[]>(),
+    // Dedup marker for the no_response automation trigger — same
+    // self-resetting comparison approach as leads.followUpFlaggedAt, but
+    // against lastMessageAt: a new message (in either direction) naturally
+    // lets it fire again next time the conversation goes quiet.
+    noResponseFlaggedAt: timestamp("noResponseFlaggedAt"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
   },

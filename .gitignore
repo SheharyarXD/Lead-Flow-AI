@@ -38,3 +38,5 @@ build/
 # Test coverage
 coverage/
 .nyc_output/
+# Locally-stored uploads (fallback when S3/R2 credentials aren't configured)
+uploads/
