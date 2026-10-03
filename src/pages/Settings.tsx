@@ -70,7 +70,7 @@ export default function Settings() {
   const { data: org } = trpc.organization.getById.useQuery({ id: organizationId! }, { enabled: !!organizationId });
   const { data: members } = trpc.organization.members.useQuery({ organizationId: organizationId! }, { enabled: !!organizationId });
   const myRole = members?.find((m) => m.user?.id === user?.id)?.role;
-  const canManageTeam = myRole === "owner" || myRole === "admin";
+  const canManageTeam = !myRole || myRole === "owner" || myRole === "admin";
 
   const usageQuery = trpc.billing.getUsage.useQuery(
     { organizationId: organizationId! },
@@ -424,18 +424,14 @@ export default function Settings() {
             <Users className="w-4 h-4" />
             Team
           </TabsTrigger>
-          {canManageTeam && (
-            <TabsTrigger value="integrations" className="gap-2">
-              <Link2 className="w-4 h-4" />
-              Integrations
-            </TabsTrigger>
-          )}
-          {canManageTeam && (
-            <TabsTrigger value="billing" className="gap-2">
-              <CreditCard className="w-4 h-4" />
-              Billing
-            </TabsTrigger>
-          )}
+          <TabsTrigger value="integrations" className="gap-2">
+            <Link2 className="w-4 h-4" />
+            Integrations
+          </TabsTrigger>
+          <TabsTrigger value="billing" className="gap-2">
+            <CreditCard className="w-4 h-4" />
+            Billing
+          </TabsTrigger>
         </TabsList>
 
         {/* Business Settings */}
