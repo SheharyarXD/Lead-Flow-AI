@@ -2,7 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { createRouter, authedQuery } from "./middleware";
 import { eq } from "drizzle-orm";
-import { subscriptions } from "@db/schema";
+import { subscriptions, cancellationSurveys } from "@db/schema";
 import { getDb } from "./queries/connection";
 import {
   requireOnboardedOrganizationMembership as requireOrganizationMembership,
@@ -104,11 +104,6 @@ export const billingRouter = createRouter({
           mode: "subscription",
           customer: customerId,
           line_items: [{ price: priceId, quantity: 1 }],
-          // Lets the customer type a discount/promotion code (e.g. a
-          // time-limited "first customers" discount) on Stripe's checkout
-          // page. Codes themselves are created and managed in the Stripe
-          // Dashboard under Product catalog > Coupons — nothing to configure
-          // here per-code.
           allow_promotion_codes: true,
           success_url: `${hostUrl}/settings?tab=billing&checkout=success`,
           cancel_url: `${hostUrl}/settings?tab=billing&checkout=cancelled`,
@@ -116,10 +111,8 @@ export const billingRouter = createRouter({
             organizationId: String(input.organizationId),
             plan: input.plan,
           },
-          // Also stamped on the subscription itself so later lifecycle events
-          // (subscription.updated/deleted) can resolve the tenant without
-          // relying on a local stripeCustomerId/stripeSubscriptionId lookup.
           subscription_data: {
+            trial_period_days: 30,
             metadata: {
               organizationId: String(input.organizationId),
             },
@@ -129,11 +122,6 @@ export const billingRouter = createRouter({
         return { url: session.url, simulated: false };
       }
 
-      // No live Stripe configuration. This must never silently grant paid
-      // entitlements — that would be a free-upgrade exploit the moment Stripe
-      // keys are missing (including by accident in production). Only allow a
-      // clearly-labeled simulated upgrade in non-production environments, for
-      // local development and demos.
       if (env.isProduction) {
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
@@ -154,4 +142,59 @@ export const billingRouter = createRouter({
 
       return { url: simulatedUrl, simulated: true };
     }),
+
+  submitCancellationSurvey: authedQuery
+    .input(
+      z.object({
+        organizationId: z.number(),
+        reason: z.string().min(1, "Please select a cancellation reason"),
+        feedback: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      await requireOrganizationRole(ctx.user.id, input.organizationId, ["owner", "admin"]);
+      const db = getDb();
+
+      const sub = await db.query.subscriptions.findFirst({
+        where: eq(subscriptions.organizationId, input.organizationId),
+      });
+
+      if (!sub) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "No active subscription found for this organization.",
+        });
+      }
+
+      // Record cancellation exit survey response in database
+      await db.insert(cancellationSurveys).values({
+        organizationId: input.organizationId,
+        userId: ctx.user.id,
+        reason: input.reason,
+        feedback: input.feedback || "",
+      });
+
+      // Cancel Stripe subscription at period end if Stripe is active
+      if (stripe && stripeSecretKey && sub.stripeSubscriptionId) {
+        try {
+          await stripe.subscriptions.update(sub.stripeSubscriptionId, {
+            cancel_at_period_end: true,
+          });
+        } catch (err: any) {
+          console.error("Failed to update Stripe subscription cancellation status:", err);
+        }
+      }
+
+      // Update local subscription status
+      await db
+        .update(subscriptions)
+        .set({
+          cancelAtPeriodEnd: true,
+          status: "cancelled",
+        })
+        .where(eq(subscriptions.id, sub.id));
+
+      return { success: true, message: "Subscription cancelled successfully." };
+    }),
 });
+

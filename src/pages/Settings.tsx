@@ -27,7 +27,19 @@ import {
   CreditCard,
   UserPlus,
   X,
+  AlertTriangle,
+  CheckCircle2,
+  Sparkles,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 
 function formatZodError(message: string): string {
   try {
@@ -65,6 +77,28 @@ export default function Settings() {
     { enabled: !!organizationId }
   );
   const checkoutMutation = trpc.billing.createCheckoutSession.useMutation();
+
+  // Cancellation Exit Survey State
+  const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelFeedback, setCancelFeedback] = useState("");
+  const [cancelError, setCancelError] = useState<string | null>(null);
+  const [cancelSuccess, setCancelSuccess] = useState<string | null>(null);
+
+  const cancelMutation = trpc.billing.submitCancellationSurvey.useMutation({
+    onSuccess: () => {
+      usageQuery.refetch();
+      setIsCancelDialogOpen(false);
+      setCancelReason("");
+      setCancelFeedback("");
+      setCancelError(null);
+      setCancelSuccess("Your subscription cancellation request has been submitted.");
+      setTimeout(() => setCancelSuccess(null), 5000);
+    },
+    onError: (err) => {
+      setCancelError(err.message || "Failed to submit cancellation request.");
+    },
+  });
 
   const { data: invitations } = trpc.organization.listInvitations.useQuery(
     { organizationId: organizationId! },
@@ -983,21 +1017,33 @@ export default function Settings() {
 
         {/* Billing */}
         <TabsContent value="billing" className="space-y-4">
+          {cancelSuccess && (
+            <div className="flex items-center gap-2 p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold rounded-lg">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>{cancelSuccess}</span>
+            </div>
+          )}
+
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Current Plan & Usage</CardTitle>
-              <CardDescription>Your active subscription tier and quota usage metrics.</CardDescription>
+              <CardDescription>Your active subscription tier, 30-day trial status, and quota usage metrics.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="flex items-center justify-between p-4 rounded-lg bg-indigo-50/50 border border-indigo-150">
                 <div>
-                  <p className="text-lg font-bold text-indigo-950 capitalize">{usageQuery.data?.plan || "Starter"} Plan</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-lg font-bold text-indigo-950">LeadFlow Pro Plan</p>
+                    <Badge className="bg-indigo-600 text-white font-bold text-[10px] px-2.5 py-0.5">
+                      30-Day Free Trial
+                    </Badge>
+                  </div>
                   <p className="text-xs text-indigo-700 font-medium mt-0.5">
-                    Status: <span className="font-extrabold uppercase">{usageQuery.data?.status || "Active"}</span>
+                    Status: <span className="font-extrabold uppercase">{usageQuery.data?.status || "Active (Free Trial)"}</span>
                   </p>
                 </div>
                 <Badge className="bg-indigo-600 text-white font-bold text-xs px-3 py-1 capitalize">
-                  {usageQuery.data?.plan || "Starter"}
+                  {usageQuery.data?.plan || "Pro"}
                 </Badge>
               </div>
 
@@ -1020,7 +1066,7 @@ export default function Settings() {
                   <div className="flex justify-between text-xs font-bold mb-1.5">
                     <span className="text-zinc-700">AI Call Minutes</span>
                     <span className="text-zinc-500">
-                      {usageQuery.data?.minutesUsed ?? 0} / {usageQuery.data?.minutesLimit ?? 100} min
+                      {usageQuery.data?.minutesUsed ?? 0} / {usageQuery.data?.minutesLimit ?? 1000} min
                     </span>
                   </div>
                   <div className="h-2 bg-zinc-100 rounded-full overflow-hidden">
@@ -1029,7 +1075,7 @@ export default function Settings() {
                       style={{
                         width: `${Math.min(
                           100,
-                          ((usageQuery.data?.minutesUsed ?? 0) / (usageQuery.data?.minutesLimit ?? 100)) * 100
+                          ((usageQuery.data?.minutesUsed ?? 0) / (usageQuery.data?.minutesLimit ?? 1000)) * 100
                         )}%`,
                       }}
                     />
@@ -1040,7 +1086,7 @@ export default function Settings() {
                   <div className="flex justify-between text-xs font-bold mb-1.5">
                     <span className="text-zinc-700">Leads Capacity</span>
                     <span className="text-zinc-500">
-                      {usageQuery.data?.leadsUsed ?? 0} / {usageQuery.data?.leadsLimit ?? 100}
+                      {usageQuery.data?.leadsUsed ?? 0} / {usageQuery.data?.leadsLimit ?? 1000}
                     </span>
                   </div>
                   <div className="h-2 bg-zinc-100 rounded-full overflow-hidden">
@@ -1049,7 +1095,7 @@ export default function Settings() {
                       style={{
                         width: `${Math.min(
                           100,
-                          ((usageQuery.data?.leadsUsed ?? 0) / (usageQuery.data?.leadsLimit ?? 100)) * 100
+                          ((usageQuery.data?.leadsUsed ?? 0) / (usageQuery.data?.leadsLimit ?? 1000)) * 100
                         )}%`,
                       }}
                     />
@@ -1060,7 +1106,7 @@ export default function Settings() {
                   <div className="flex justify-between text-xs font-bold mb-1.5">
                     <span className="text-zinc-700">Team Members</span>
                     <span className="text-zinc-500">
-                      {usageQuery.data?.usersUsed ?? 1} / {usageQuery.data?.usersLimit ?? 5}
+                      {usageQuery.data?.usersUsed ?? 1} / {usageQuery.data?.usersLimit ?? 20}
                     </span>
                   </div>
                   <div className="h-2 bg-zinc-100 rounded-full overflow-hidden">
@@ -1069,7 +1115,7 @@ export default function Settings() {
                       style={{
                         width: `${Math.min(
                           100,
-                          ((usageQuery.data?.usersUsed ?? 1) / (usageQuery.data?.usersLimit ?? 5)) * 100
+                          ((usageQuery.data?.usersUsed ?? 1) / (usageQuery.data?.usersLimit ?? 20)) * 100
                         )}%`,
                       }}
                     />
@@ -1079,95 +1125,166 @@ export default function Settings() {
 
               <Separator />
 
-              {/* Subscription Plan Tiers */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                {[
-                  {
-                    id: "starter" as const,
-                    name: "Starter",
-                    price: "$97/mo",
-                    features: ["100 Call Minutes", "100 Leads", "5 Team Members", "Standard Support"],
-                  },
-                  {
-                    id: "professional" as const,
-                    name: "Professional",
-                    price: "$297/mo",
-                    features: ["1,000 Call Minutes", "1,000 Leads", "20 Team Members", "Priority AI Queue"],
-                  },
-                  {
-                    id: "enterprise" as const,
-                    name: "Enterprise",
-                    price: "$997/mo",
-                    features: ["5,000 Call Minutes", "10,000 Leads", "Unlimited Team", "Custom AI Voice Training"],
-                  },
-                ].map((planItem) => {
-                  const isCurrent = (usageQuery.data?.plan || "starter") === planItem.id;
-                  return (
-                    <div
-                      key={planItem.id}
-                      className={`p-5 rounded-xl border flex flex-col justify-between transition-all ${
-                        isCurrent
-                          ? "border-indigo-600 bg-indigo-50/20 ring-2 ring-indigo-500/20 shadow-sm"
-                          : "border-zinc-200 bg-white hover:border-zinc-300"
-                      }`}
-                    >
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="font-bold text-zinc-950 text-sm">{planItem.name}</span>
-                          {isCurrent && (
-                            <Badge className="bg-indigo-100 text-indigo-700 hover:bg-indigo-100 text-[10px] font-bold">
-                              Current Plan
-                            </Badge>
-                          )}
-                        </div>
-                        <p className="text-xl font-extrabold text-zinc-950 mb-3">{planItem.price}</p>
-                        <ul className="space-y-1.5 mb-4">
-                          {planItem.features.map((f) => (
-                            <li key={f} className="text-xs text-zinc-600 flex items-center gap-1.5 font-medium">
-                              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
-                              {f}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
+              {/* Single Subscription Plan Tier: LeadFlow Pro ($197/mo, 30 Days Free) */}
+              <div className="max-w-xl mx-auto w-full">
+                <div className="p-6 rounded-2xl border-2 border-indigo-600 bg-gradient-to-b from-indigo-50/40 to-white shadow-md relative overflow-hidden">
+                  <div className="absolute top-0 right-0 bg-indigo-600 text-white text-[10px] font-extrabold uppercase px-4 py-1 rounded-bl-xl tracking-wider flex items-center gap-1">
+                    <Sparkles className="w-3 h-3" /> 30-Day Free Trial
+                  </div>
 
-                      <Button
-                        variant={isCurrent ? "outline" : "default"}
-                        size="sm"
-                        disabled={isCurrent || checkoutMutation.isPending}
-                        onClick={async () => {
-                          if (!organizationId) return;
-                          const res = await checkoutMutation.mutateAsync({
-                            organizationId,
-                            plan: planItem.id,
-                            originUrl: window.location.origin,
-                          });
-                          if (res.simulated) {
-                            usageQuery.refetch();
-                          } else if (res.url) {
-                            window.location.href = res.url;
-                          }
-                        }}
-                        className={`w-full text-xs font-bold h-9 rounded-lg ${
-                          isCurrent
-                            ? "border-zinc-200 text-zinc-500"
-                            : "bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm"
-                        }`}
+                  <div className="mb-4">
+                    <h3 className="font-extrabold text-zinc-950 text-xl">LeadFlow Pro</h3>
+                    <p className="text-xs text-zinc-500 mt-0.5">Full platform access with zero upfront charge for 30 days.</p>
+                  </div>
+
+                  <div className="flex items-baseline gap-2 mb-6">
+                    <span className="text-3xl font-black text-zinc-950">$197</span>
+                    <span className="text-xs font-bold text-zinc-500">/ month USD</span>
+                    <span className="ml-auto text-xs font-extrabold text-indigo-700 bg-indigo-100 px-2.5 py-0.5 rounded-full">
+                      First 30 Days $0
+                    </span>
+                  </div>
+
+                  <ul className="space-y-2.5 mb-6 text-xs text-zinc-700 font-medium">
+                    <li className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-indigo-600 shrink-0" />
+                      <strong>1,000 AI Voice Call Minutes</strong> included per month
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-indigo-600 shrink-0" />
+                      <strong>1,000 Qualified Lead Capacity</strong> with automated tracking
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-indigo-600 shrink-0" />
+                      <strong>20 Team Member Seats</strong> with custom role permissions
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-indigo-600 shrink-0" />
+                      <strong>Unified SMS & Email Inbox</strong> with custom Twilio & SMTP setup
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-indigo-600 shrink-0" />
+                      <strong>Smart Lead Pipelines & Automated Follow-ups</strong>
+                    </li>
+                  </ul>
+
+                  <div className="space-y-3">
+                    <Button
+                      size="default"
+                      disabled={checkoutMutation.isPending}
+                      onClick={async () => {
+                        if (!organizationId) return;
+                        const res = await checkoutMutation.mutateAsync({
+                          organizationId,
+                          plan: "professional",
+                          originUrl: window.location.origin,
+                        });
+                        if (res.simulated) {
+                          usageQuery.refetch();
+                        } else if (res.url) {
+                          window.location.href = res.url;
+                        }
+                      }}
+                      className="w-full text-sm font-extrabold h-11 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-md transition-all"
+                    >
+                      {checkoutMutation.isPending
+                        ? "Redirecting to Checkout..."
+                        : "Subscribe Now — Start 30-Day Free Trial"}
+                    </Button>
+
+                    <div className="text-center pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsCancelDialogOpen(true)}
+                        className="text-xs text-zinc-400 hover:text-red-600 font-medium underline transition-colors"
                       >
-                        {isCurrent
-                          ? "Current Plan"
-                          : checkoutMutation.isPending
-                          ? "Redirecting..."
-                          : `Upgrade to ${planItem.name}`}
-                      </Button>
+                        Cancel Active Subscription
+                      </button>
                     </div>
-                  );
-                })}
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Cancellation Exit Survey Modal */}
+      <Dialog open={isCancelDialogOpen} onOpenChange={setIsCancelDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-2 text-red-600 mb-1">
+              <AlertTriangle className="w-5 h-5" />
+              <DialogTitle className="text-lg font-bold">We're sorry to see you go</DialogTitle>
+            </div>
+            <DialogDescription className="text-xs">
+              Before cancelling your LeadFlow Pro subscription, please help us understand why you are leaving. Your feedback helps us improve the product.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {cancelError && (
+              <div className="p-3 bg-red-50 border border-red-200 text-red-800 text-xs font-bold rounded-lg">
+                {cancelError}
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label className="text-xs font-bold">Why are you cancelling? <span className="text-red-500">*</span></Label>
+              <Select value={cancelReason} onValueChange={setCancelReason}>
+                <SelectTrigger className="bg-white text-xs">
+                  <SelectValue placeholder="Select a reason..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="price">Price is too high / Expensive</SelectItem>
+                  <SelectItem value="missing_features">Missing key features I need</SelectItem>
+                  <SelectItem value="not_using">Not using the platform enough</SelectItem>
+                  <SelectItem value="switched">Switched to another tool/service</SelectItem>
+                  <SelectItem value="technical">Experienced technical bugs or issues</SelectItem>
+                  <SelectItem value="other">Other reason</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-xs font-bold">Additional feedback or suggestions (optional)</Label>
+              <Textarea
+                placeholder="What could we have done better?"
+                value={cancelFeedback}
+                onChange={(e) => setCancelFeedback(e.target.value)}
+                className="text-xs min-h-[80px]"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsCancelDialogOpen(false)}
+              className="text-xs"
+            >
+              Keep My Subscription
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={!cancelReason || cancelMutation.isPending}
+              onClick={() => {
+                if (!organizationId || !cancelReason) return;
+                cancelMutation.mutate({
+                  organizationId,
+                  reason: cancelReason,
+                  feedback: cancelFeedback,
+                });
+              }}
+              className="text-xs font-bold"
+            >
+              {cancelMutation.isPending ? "Submitting..." : "Confirm Cancellation"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -573,6 +573,29 @@ export const stripeEvents = mysqlTable("stripeEvents", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
+// Exit feedback survey logged when a customer requests cancellation
+export const cancellationSurveys = mysqlTable(
+  "cancellationSurveys",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: bigint("organizationId", { mode: "number", unsigned: true })
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    userId: bigint("userId", { mode: "number", unsigned: true }).references(() => users.id, {
+      onDelete: "set null",
+    }),
+    reason: varchar("reason", { length: 255 }).notNull(),
+    feedback: text("feedback"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    orgIdx: index("cancel_survey_org_idx").on(table.organizationId),
+  })
+);
+
+export type CancellationSurvey = typeof cancellationSurveys.$inferSelect;
+export type InsertCancellationSurvey = typeof cancellationSurveys.$inferInsert;
+
 // ─── Knowledge Base ──────────────────────────────────────────────────────
 export const knowledgeBase = mysqlTable(
   "knowledgeBase",
