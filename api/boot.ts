@@ -28,7 +28,7 @@ import { createTask } from "./queries/tasks";
 import { requireOrganizationMembership as requireCallOrgMembership } from "./queries/organizations";
 import { triggerAIAutoReply } from "./lib/ai-agent";
 import { decryptSecret } from "./lib/crypto";
-import { authenticateRequest } from "./kimi/auth";
+import { authenticateRequest } from "./auth/request";
 import { onCallCompleted } from "./lib/callEvents";
 import { startScheduler } from "./lib/scheduler";
 import { MAX_UPLOAD_BYTES, isAllowedUploadMimeType } from "./lib/uploads";
@@ -45,13 +45,14 @@ function safeCompare(a: string, b: string): boolean {
   return timingSafeEqual(bufA, bufB);
 }
 
-// Shared by every Twilio Voice webhook: resolves the tenant by the number the
-// call came in on (or went out from), then validates the request signature
-// using THAT organization's own Twilio auth token when they've configured
-// their own account (BYOK), falling back to the platform-wide token otherwise.
-// A webhook can never be trusted to say which organization it's for on its
-// own — the "To"/"From" number is the only thing we verify tenancy from.
-async function resolveVoiceOrgAndVerify(
+// Shared by every inbound Twilio webhook — SMS as well as Voice: resolves the
+// tenant by the number the message/call came in on (or went out from), then
+// validates the request signature using THAT organization's own Twilio auth
+// token when they've configured their own account (BYOK), falling back to the
+// platform-wide token otherwise. A webhook can never be trusted to say which
+// organization it's for on its own — the "To"/"From" number is the only thing
+// we verify tenancy from.
+async function resolveTwilioOrgAndVerify(
   c: { req: { header: (n: string) => string | undefined; url: string } },
   body: Record<string, unknown>,
   lookupNumber: string
@@ -107,24 +108,29 @@ function mapTwilioCallStatus(status: string): typeof calls.$inferSelect.status {
 app.post("/api/webhooks/sms", async (c) => {
   const db = getDb();
   const body = await c.req.parseBody();
-  const signature = c.req.header("x-twilio-signature");
-  const webhookToken = process.env.TWILIO_AUTH_TOKEN;
-  if (env.isProduction && (!webhookToken || !signature || !twilio.validateRequest(webhookToken, signature, c.req.url, Object.fromEntries(Object.entries(body).map(([key, value]) => [key, String(value)]))))) return c.text("Unauthorized", 401);
-  
+
   const fromNum = (body.From as string) || "";
   const toNum = (body.To as string) || "";
   const textBody = (body.Body as string) || "";
-  
+
   if (!fromNum || !textBody) {
     c.header("Content-Type", "application/xml");
     return c.text("<Response></Response>");
   }
 
+  // Resolve the tenant from the receiving number FIRST, then verify Twilio's
+  // signature with that organization's own auth token. Previously this handler
+  // validated against the platform-wide TWILIO_AUTH_TOKEN only, which meant an
+  // organization using its own Twilio account (the BYOK path the product
+  // advertises, and which outbound SMS already honours) could send texts but
+  // never receive them — Twilio signs with the tenant's token, so every
+  // inbound message failed verification and was silently dropped with a 401.
+  const { organization, valid } = await resolveTwilioOrgAndVerify(c, body, toNum);
+  if (!valid) return c.text("Unauthorized", 401);
+
+  c.header("Content-Type", "application/xml");
+
   try {
-    let organization = toNum ? await db.query.organizations.findFirst({ where: eq(organizations.phone, toNum) }) : null;
-    if (!organization && !env.isProduction) {
-      organization = await db.query.organizations.findFirst();
-    }
     if (!organization) return c.text("<Response></Response>", 404, { "Content-Type": "application/xml" });
     let customer = await db.query.customers.findFirst({
       where: and(eq(customers.phone, fromNum), eq(customers.organizationId, organization.id)),
@@ -238,7 +244,7 @@ app.post("/api/webhooks/voice", async (c) => {
       ? await db.query.organizations.findFirst({ where: eq(organizations.id, existingCall.organizationId) })
       : null;
 
-    const { valid } = await resolveVoiceOrgAndVerify(c, body, organization?.phone || "");
+    const { valid } = await resolveTwilioOrgAndVerify(c, body, organization?.phone || "");
     if (!valid || !existingCall || !organization) {
       return c.text(`<?xml version="1.0" encoding="UTF-8"?><Response><Reject /></Response>`, existingCall ? 200 : 401);
     }
@@ -263,7 +269,7 @@ app.post("/api/webhooks/voice", async (c) => {
   }
 
   // ── Case 2: genuine inbound call ──
-  const { organization, valid } = await resolveVoiceOrgAndVerify(c, body, toNum);
+  const { organization, valid } = await resolveTwilioOrgAndVerify(c, body, toNum);
   if (!valid) return c.text("Unauthorized", 401);
   if (!organization) {
     return c.text(`<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="alice">We're sorry, this number is not currently in service.</Say></Response>`, 404);
@@ -356,7 +362,7 @@ app.post("/api/webhooks/voice/recording-complete", async (c) => {
   if (!existingCall) return c.text('<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>');
 
   const org = await getDb().query.organizations.findFirst({ where: eq(organizations.id, existingCall.organizationId) });
-  const { valid } = await resolveVoiceOrgAndVerify(c, body, org?.phone || "");
+  const { valid } = await resolveTwilioOrgAndVerify(c, body, org?.phone || "");
   if (!valid) return c.text("Unauthorized", 401);
 
   // Recording-specific fields are safe to write unconditionally (idempotent
@@ -428,7 +434,7 @@ app.post("/api/webhooks/voice/status", async (c) => {
     return c.text("OK");
   }
 
-  const { valid } = await resolveVoiceOrgAndVerify(
+  const { valid } = await resolveTwilioOrgAndVerify(
     c,
     body,
     (await getDb().query.organizations.findFirst({ where: eq(organizations.id, existingCall.organizationId) }))?.phone || ""
@@ -498,7 +504,7 @@ app.post("/api/webhooks/voice/recording", async (c) => {
   const existingCall = await findCallByTwilioSid(callSid);
   if (!existingCall) return c.text("OK");
 
-  const { valid } = await resolveVoiceOrgAndVerify(
+  const { valid } = await resolveTwilioOrgAndVerify(
     c,
     body,
     (await getDb().query.organizations.findFirst({ where: eq(organizations.id, existingCall.organizationId) }))?.phone || ""
@@ -672,29 +678,58 @@ app.post("/api/webhooks/stripe", async (c) => {
       const session = event.data.object as import("stripe").default.Checkout.Session;
       const orgId = parseInt(session.metadata?.organizationId || "0");
       const plan = (session.metadata?.plan || "professional") as "starter" | "professional" | "enterprise";
-      const limits = PLAN_LIMITS[plan];
+      const limits = PLAN_LIMITS[plan] || PLAN_LIMITS.professional;
 
       if (orgId) {
+        let status: "trialing" | "active" = "trialing";
+        let trialEndsAt: Date | null = null;
+        let periodStart: Date | null = null;
+        let periodEnd: Date | null = null;
+
+        if (stripeSecretKey && session.subscription) {
+          try {
+            const Stripe = (await import("stripe")).default;
+            const stripe = new Stripe(stripeSecretKey, { apiVersion: "2025-02-24.acacia" as any });
+            const stripeSub = await stripe.subscriptions.retrieve(session.subscription as string);
+            status = stripeSub.status === "active" ? "active" : "trialing";
+            if (stripeSub.trial_end) {
+              trialEndsAt = new Date(stripeSub.trial_end * 1000);
+            }
+            if (stripeSub.current_period_start) {
+              periodStart = new Date(stripeSub.current_period_start * 1000);
+            }
+            if (stripeSub.current_period_end) {
+              periodEnd = new Date(stripeSub.current_period_end * 1000);
+            }
+          } catch (fetchErr) {
+            console.warn("Could not retrieve subscription during checkout.session.completed:", fetchErr);
+          }
+        }
+
         await db
           .update(subscriptions)
           .set({
             plan,
-            status: "active",
+            status,
+            trialEndsAt,
+            currentPeriodStart: periodStart,
+            currentPeriodEnd: periodEnd,
+            cancelAtPeriodEnd: false,
             stripeCustomerId: session.customer as string,
             stripeSubscriptionId: session.subscription as string,
             ...limits,
           })
           .where(eq(subscriptions.organizationId, orgId));
 
-        console.log(`Organization #${orgId} upgraded to ${plan} plan via Stripe Checkout.`);
+        console.log(`Organization #${orgId} checkout completed (${plan} plan, status: ${status}) via Stripe.`);
       }
     } else if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.created") {
       const sub = event.data.object as import("stripe").default.Subscription;
       const orgId = parseInt(sub.metadata?.organizationId || "0");
       const local = orgId ? await findSubByOrgId(orgId) : await findSubByStripeIds(sub.customer as string, sub.id);
       if (local) {
-        const item = sub.items.data[0];
-        const plan = planFromPriceId(item?.price?.id);
+        const item = sub.items?.data?.[0];
+        const plan = planFromPriceId(item?.price?.id) || local.plan;
         const statusMap: Record<string, typeof subscriptions.$inferSelect.status> = {
           active: "active",
           trialing: "trialing",
@@ -702,14 +737,13 @@ app.post("/api/webhooks/stripe", async (c) => {
           canceled: "cancelled",
           unpaid: "past_due",
           paused: "paused",
+          incomplete: "incomplete",
+          incomplete_expired: "cancelled",
         };
 
-        // Snapshot the active coupon/promotion-code discount (if any) so the
-        // Billing tab can show it without a live Stripe API call. Cleared to
-        // null here too, so an expired/removed discount disappears on the
-        // next webhook delivery instead of lingering stale.
+        // Snapshot active coupon/discount
         const firstDiscount = sub.discounts?.[0];
-        const discountSource = firstDiscount && typeof firstDiscount === "object" ? firstDiscount.source : null;
+        const discountSource = firstDiscount && typeof firstDiscount === "object" ? (firstDiscount as any).source : null;
         const coupon = discountSource?.coupon && typeof discountSource.coupon === "object" ? discountSource.coupon : null;
         const discountAmount = coupon?.percent_off != null
           ? `${coupon.percent_off}% off`
@@ -717,18 +751,23 @@ app.post("/api/webhooks/stripe", async (c) => {
           ? `${(coupon.amount_off / 100).toFixed(2)} ${(coupon.currency || "").toUpperCase()} off`
           : null;
         const discountSummary = discountAmount ? (coupon?.name ? `${discountAmount} (${coupon.name})` : discountAmount) : null;
-        const discountEndsAt = discountSummary && typeof firstDiscount === "object" && firstDiscount.end
-          ? new Date(firstDiscount.end * 1000)
+        const discountEndsAt = discountSummary && typeof firstDiscount === "object" && (firstDiscount as any).end
+          ? new Date((firstDiscount as any).end * 1000)
           : null;
+
+        const trialEndsAt = sub.trial_end ? new Date(sub.trial_end * 1000) : null;
 
         await db
           .update(subscriptions)
           .set({
             status: statusMap[sub.status] ?? local.status,
+            stripeCustomerId: sub.customer as string,
+            stripeSubscriptionId: sub.id,
             ...(plan ? { plan, ...PLAN_LIMITS[plan] } : {}),
             cancelAtPeriodEnd: !!sub.cancel_at_period_end,
-            currentPeriodStart: item?.current_period_start ? new Date(item.current_period_start * 1000) : local.currentPeriodStart,
-            currentPeriodEnd: item?.current_period_end ? new Date(item.current_period_end * 1000) : local.currentPeriodEnd,
+            trialEndsAt: trialEndsAt ?? local.trialEndsAt,
+            currentPeriodStart: sub.current_period_start ? new Date(sub.current_period_start * 1000) : local.currentPeriodStart,
+            currentPeriodEnd: sub.current_period_end ? new Date(sub.current_period_end * 1000) : local.currentPeriodEnd,
             discountSummary,
             discountEndsAt,
           })
@@ -740,17 +779,42 @@ app.post("/api/webhooks/stripe", async (c) => {
       const orgId = parseInt(sub.metadata?.organizationId || "0");
       const local = orgId ? await findSubByOrgId(orgId) : await findSubByStripeIds(sub.customer as string, sub.id);
       if (local) {
-        await db.update(subscriptions).set({ status: "cancelled" }).where(eq(subscriptions.id, local.id));
-        console.log(`Subscription for Organization #${local.organizationId} cancelled.`);
+        await db
+          .update(subscriptions)
+          .set({
+            status: "cancelled",
+            cancelAtPeriodEnd: false,
+            cancelledAt: new Date(),
+          })
+          .where(eq(subscriptions.id, local.id));
+        console.log(`Subscription for Organization #${local.organizationId} cancelled via Stripe.`);
       }
     } else if (event.type === "invoice.payment_failed") {
       const invoice = event.data.object as import("stripe").default.Invoice;
-      const subscriptionRef = invoice.parent?.subscription_details?.subscription;
+      const subscriptionRef = (invoice as any).parent?.subscription_details?.subscription || invoice.subscription;
       const subscriptionId = typeof subscriptionRef === "string" ? subscriptionRef : subscriptionRef?.id ?? null;
       const local = await findSubByStripeIds(invoice.customer as string, subscriptionId);
       if (local) {
         await db.update(subscriptions).set({ status: "past_due" }).where(eq(subscriptions.id, local.id));
-        console.log(`Subscription for Organization #${local.organizationId} marked past_due (payment failed).`);
+        console.log(`Subscription for Organization #${local.organizationId} marked past_due (invoice payment failed).`);
+      }
+    } else if (event.type === "invoice.paid") {
+      const invoice = event.data.object as import("stripe").default.Invoice;
+      const subscriptionRef = (invoice as any).parent?.subscription_details?.subscription || invoice.subscription;
+      const subscriptionId = typeof subscriptionRef === "string" ? subscriptionRef : subscriptionRef?.id ?? null;
+      const local = await findSubByStripeIds(invoice.customer as string, subscriptionId);
+      if (local) {
+        const periodStart = (invoice as any).period_start ? new Date((invoice as any).period_start * 1000) : local.currentPeriodStart;
+        const periodEnd = (invoice as any).period_end ? new Date((invoice as any).period_end * 1000) : local.currentPeriodEnd;
+        await db
+          .update(subscriptions)
+          .set({
+            status: "active",
+            currentPeriodStart: periodStart,
+            currentPeriodEnd: periodEnd,
+          })
+          .where(eq(subscriptions.id, local.id));
+        console.log(`Subscription for Organization #${local.organizationId} active (invoice paid, amount: ${invoice.amount_paid}).`);
       }
     }
   } catch (err) {

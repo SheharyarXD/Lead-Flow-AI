@@ -1,3 +1,18 @@
+// DEPRECATED — DO NOT USE ON A NEW INSTALLATION.
+//
+// This is a legacy one-off patch script written for a database that was built
+// by hand before migrations existed. It only runs ALTER/CREATE statements
+// against tables it assumes already exist, and it swallows every error as a
+// "Skipped/Failed" warning — so running it against an empty database produces
+// a broken schema and a screen full of warnings that look survivable.
+//
+// The supported way to create or update the schema is:
+//
+//     npm run db:migrate
+//
+// Kept only so the original installation can still be reconciled if needed.
+// It is intentionally no longer wired to an npm script.
+
 import mysql from "mysql2/promise";
 import "dotenv/config";
 
@@ -177,6 +192,32 @@ async function main() {
   await runSql("ALTER TABLE documents ADD CONSTRAINT fk_doc_customer FOREIGN KEY (customerId) REFERENCES customers(id) ON DELETE SET NULL;");
   await runSql("ALTER TABLE documents ADD CONSTRAINT fk_doc_lead FOREIGN KEY (leadId) REFERENCES leads(id) ON DELETE SET NULL;");
   await runSql("ALTER TABLE documents ADD CONSTRAINT fk_doc_uploader FOREIGN KEY (uploadedBy) REFERENCES users(id) ON DELETE SET NULL;");
+
+  // 13. Add trial & cancellation fields to subscriptions and create cancellationSurveys table
+  await runSql("ALTER TABLE subscriptions ADD COLUMN trialEndsAt timestamp NULL DEFAULT NULL;");
+  await runSql("ALTER TABLE subscriptions ADD COLUMN cancellationReason varchar(255) DEFAULT NULL;");
+  await runSql("ALTER TABLE subscriptions ADD COLUMN cancelledAt timestamp NULL DEFAULT NULL;");
+  await runSql("ALTER TABLE subscriptions MODIFY COLUMN status enum('trialing','active','past_due','cancelled','paused','incomplete') NOT NULL DEFAULT 'incomplete';");
+  await runSql(`
+    CREATE TABLE IF NOT EXISTS cancellationSurveys (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      organizationId BIGINT UNSIGNED NOT NULL,
+      userId BIGINT UNSIGNED NULL,
+      stripeSubscriptionId VARCHAR(255) NULL,
+      stripeCustomerId VARCHAR(255) NULL,
+      reason VARCHAR(255) NOT NULL,
+      reasonDetails TEXT NULL,
+      whatCouldBeBetter TEXT NULL,
+      missingFeatureExpected TEXT NULL,
+      likelihoodToReturn VARCHAR(50) NULL,
+      additionalComments TEXT NULL,
+      createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+      INDEX cancel_survey_org_idx (organizationId),
+      INDEX cancel_survey_user_idx (userId),
+      CONSTRAINT fk_survey_org FOREIGN KEY (organizationId) REFERENCES organizations(id) ON DELETE CASCADE,
+      CONSTRAINT fk_survey_user FOREIGN KEY (userId) REFERENCES users(id) ON DELETE SET NULL
+    ) ENGINE=InnoDB;
+  `);
 
   console.log("Database repair completed successfully!");
   await connection.end();

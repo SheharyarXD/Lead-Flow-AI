@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router";
 import { trpc } from "@/providers/trpc";
 import { useOrganization } from "@/hooks/useOrganization";
 import { useAuth } from "@/hooks/useAuth";
@@ -10,6 +11,15 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -27,6 +37,15 @@ import {
   CreditCard,
   UserPlus,
   X,
+  AlertTriangle,
+  CheckCircle2,
+  Calendar,
+  ExternalLink,
+  ShieldCheck,
+  Clock,
+  Sparkles,
+  RefreshCw,
+  HelpCircle,
 } from "lucide-react";
 
 function formatZodError(message: string): string {
@@ -65,6 +84,54 @@ export default function Settings() {
     { enabled: !!organizationId }
   );
   const checkoutMutation = trpc.billing.createCheckoutSession.useMutation();
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  const currentTab = searchParams.get("tab") || "business";
+  const checkoutParam = searchParams.get("checkout");
+  const onboardingParam = searchParams.get("onboarding");
+
+  // Cancellation Survey State
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState<
+    "too_expensive" | "not_enough_value" | "missing_feature" | "too_difficult" | "business_circumstances_changed" | "not_enough_leads" | "technical_problems" | "other"
+  >("not_enough_value");
+  const [cancelReasonDetails, setCancelReasonDetails] = useState("");
+  const [cancelWhatBetter, setCancelWhatBetter] = useState("");
+  const [cancelMissingFeature, setCancelMissingFeature] = useState("");
+  const [cancelLikelihood, setCancelLikelihood] = useState<"very_likely" | "likely" | "neutral" | "unlikely" | "very_unlikely">("neutral");
+  const [cancelComments, setCancelComments] = useState("");
+  const [cancelFeedbackSuccess, setCancelFeedbackSuccess] = useState<string | null>(null);
+  const [billingActionError, setBillingActionError] = useState<string | null>(null);
+
+  const cancelMutation = trpc.billing.submitCancellationSurveyAndCancel.useMutation({
+    onSuccess: (data) => {
+      setCancelModalOpen(false);
+      setCancelFeedbackSuccess(data.message || "Your cancellation request has been recorded.");
+      usageQuery.refetch();
+    },
+    onError: (err) => {
+      setBillingActionError(err.message || "Failed to process cancellation.");
+    },
+  });
+
+  const resumeMutation = trpc.billing.resumeSubscription.useMutation({
+    onSuccess: () => {
+      setBillingActionError(null);
+      usageQuery.refetch();
+    },
+    onError: (err) => {
+      setBillingActionError(err.message || "Failed to resume subscription.");
+    },
+  });
+
+  const portalMutation = trpc.billing.createCustomerPortalSession.useMutation({
+    onSuccess: (data) => {
+      if (data.url) window.location.href = data.url;
+    },
+    onError: (err) => {
+      setBillingActionError(err.message || "Stripe Customer Portal is unavailable.");
+    },
+  });
 
   const { data: invitations } = trpc.organization.listInvitations.useQuery(
     { organizationId: organizationId! },
@@ -376,7 +443,11 @@ export default function Settings() {
         </p>
       </div>
 
-      <Tabs defaultValue="business" className="space-y-6">
+      <Tabs
+        value={["business", "ai", "team", "integrations", "billing"].includes(currentTab) ? currentTab : "business"}
+        onValueChange={(val) => setSearchParams({ tab: val })}
+        className="space-y-6"
+      >
         <TabsList className="w-full sm:w-auto">
           <TabsTrigger value="business" className="gap-2">
             <Building2 className="w-4 h-4" />
@@ -982,190 +1053,578 @@ export default function Settings() {
         </TabsContent>
 
         {/* Billing */}
-        <TabsContent value="billing" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Current Plan & Usage</CardTitle>
-              <CardDescription>Your active subscription tier and quota usage metrics.</CardDescription>
+        <TabsContent value="billing" className="space-y-6">
+          {/* Checkout / Action Notifications */}
+          {checkoutParam === "success" && (
+            <div className="flex items-center gap-3 p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+              <div className="text-xs">
+                <p className="font-bold">Subscription Activated!</p>
+                <p className="text-emerald-700">
+                  Welcome to LeadFlow Pro. Your 30-day free trial has started. You will not be charged until your trial concludes.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {checkoutParam === "cancelled" && (
+            <div className="flex items-center gap-3 p-4 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-800">
+              <AlertTriangle className="w-5 h-5 text-zinc-500 shrink-0" />
+              <div className="text-xs">
+                <p className="font-bold">Checkout Not Completed</p>
+                <p className="text-zinc-600">
+                  Your checkout session was cancelled. No charges were made to your account.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {cancelFeedbackSuccess && (
+            <div className="flex items-center gap-3 p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900">
+              <CheckCircle2 className="w-5 h-5 text-amber-600 shrink-0" />
+              <div className="text-xs">
+                <p className="font-bold">Cancellation Feedback Received</p>
+                <p className="text-amber-700">{cancelFeedbackSuccess}</p>
+              </div>
+            </div>
+          )}
+
+          {billingActionError && (
+            <div className="flex items-center gap-3 p-4 rounded-xl bg-red-50 border border-red-200 text-red-900">
+              <AlertTriangle className="w-5 h-5 text-red-600 shrink-0" />
+              <div className="text-xs font-semibold">{billingActionError}</div>
+            </div>
+          )}
+
+          {/* Current Plan Overview Card */}
+          <Card className="border-zinc-200 shadow-sm">
+            <CardHeader className="pb-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-lg font-bold text-zinc-950">Subscription Overview</CardTitle>
+                  <CardDescription className="text-xs text-zinc-500 mt-0.5">
+                    Manage your LeadFlow Pro tier, trial duration, and monthly quotas.
+                  </CardDescription>
+                </div>
+                {usageQuery.data?.status === "trialing" && (
+                  <Badge className="bg-indigo-600 text-white font-bold text-xs px-3 py-1 shadow-sm">
+                    30-Day Free Trial
+                  </Badge>
+                )}
+                {usageQuery.data?.status === "active" && (
+                  <Badge className="bg-emerald-600 text-white font-bold text-xs px-3 py-1 shadow-sm">
+                    Active ($197/mo)
+                  </Badge>
+                )}
+                {usageQuery.data?.status === "past_due" && (
+                  <Badge className="bg-red-600 text-white font-bold text-xs px-3 py-1 shadow-sm">
+                    Payment Past Due
+                  </Badge>
+                )}
+                {usageQuery.data?.status === "cancelled" && (
+                  <Badge className="bg-zinc-500 text-white font-bold text-xs px-3 py-1 shadow-sm">
+                    Cancelled
+                  </Badge>
+                )}
+                {usageQuery.data?.status === "incomplete" && (
+                  <Badge className="bg-amber-500 text-white font-bold text-xs px-3 py-1 shadow-sm">
+                    Trial Available
+                  </Badge>
+                )}
+              </div>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="flex items-center justify-between p-4 rounded-lg bg-indigo-50/50 border border-indigo-150">
-                <div>
-                  <p className="text-lg font-bold text-indigo-950 capitalize">{usageQuery.data?.plan || "Starter"} Plan</p>
-                  <p className="text-xs text-indigo-700 font-medium mt-0.5">
-                    Status: <span className="font-extrabold uppercase">{usageQuery.data?.status || "Active"}</span>
-                  </p>
+              {/* Status Banner */}
+              <div className="p-4 rounded-xl bg-gradient-to-r from-indigo-50/70 via-indigo-50/40 to-white border border-indigo-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-indigo-600" />
+                    <span className="font-extrabold text-zinc-900 text-base">LeadFlow Pro</span>
+                    <span className="text-xs text-zinc-500 font-semibold">• $197 USD / month</span>
+                  </div>
+
+                  {usageQuery.data?.status === "trialing" && (
+                    <p className="text-xs text-indigo-900 font-medium leading-relaxed">
+                      Your 30-day free trial is active with{" "}
+                      <span className="font-bold text-indigo-700">
+                        {usageQuery.data.daysRemainingInTrial} {usageQuery.data.daysRemainingInTrial === 1 ? "day" : "days"} remaining
+                      </span>
+                      . You will be charged <span className="font-bold">$197/month</span> starting on{" "}
+                      <span className="font-bold text-zinc-900">
+                        {usageQuery.data.trialEndsAt
+                          ? new Date(usageQuery.data.trialEndsAt).toLocaleDateString("en-US", { dateStyle: "long" })
+                          : usageQuery.data.currentPeriodEnd
+                          ? new Date(usageQuery.data.currentPeriodEnd).toLocaleDateString("en-US", { dateStyle: "long" })
+                          : "end of trial"}
+                      </span>{" "}
+                      unless you cancel before then.
+                    </p>
+                  )}
+
+                  {usageQuery.data?.status === "active" && (
+                    <p className="text-xs text-zinc-600 font-medium">
+                      {usageQuery.data.cancelAtPeriodEnd ? (
+                        <span className="text-amber-700 font-semibold">
+                          Cancellation scheduled. Access remains available until{" "}
+                          {usageQuery.data.currentPeriodEnd
+                            ? new Date(usageQuery.data.currentPeriodEnd).toLocaleDateString("en-US", { dateStyle: "long" })
+                            : "the end of your period"}
+                          . You will not be charged again.
+                        </span>
+                      ) : (
+                        <span>
+                          Subscription is active. Next recurring charge:{" "}
+                          <span className="font-bold text-zinc-900">
+                            {usageQuery.data.currentPeriodEnd
+                              ? new Date(usageQuery.data.currentPeriodEnd).toLocaleDateString("en-US", { dateStyle: "long" })
+                              : "next billing cycle"}
+                          </span>{" "}
+                          at $197 USD / month.
+                        </span>
+                      )}
+                    </p>
+                  )}
+
+                  {usageQuery.data?.status === "past_due" && (
+                    <p className="text-xs text-red-700 font-semibold">
+                      Your latest invoice payment failed. Please update your payment method to maintain full access.
+                    </p>
+                  )}
+
+                  {usageQuery.data?.status === "cancelled" && (
+                    <p className="text-xs text-zinc-600 font-medium">
+                      Your subscription is currently cancelled. Start a new subscription below to reactivate your features.
+                    </p>
+                  )}
+
+                  {usageQuery.data?.status === "incomplete" && (
+                    <p className="text-xs text-zinc-600 font-medium">
+                      Your account is ready. Activate your <span className="font-bold text-zinc-900">30-day completely free trial</span> below. No charge today.
+                    </p>
+                  )}
                 </div>
-                <Badge className="bg-indigo-600 text-white font-bold text-xs px-3 py-1 capitalize">
-                  {usageQuery.data?.plan || "Starter"}
-                </Badge>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  {usageQuery.data?.cancelAtPeriodEnd && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => organizationId && resumeMutation.mutate({ organizationId })}
+                      disabled={resumeMutation.isPending}
+                      className="border-indigo-300 text-indigo-700 hover:bg-indigo-50 font-bold text-xs h-9"
+                    >
+                      {resumeMutation.isPending ? "Resuming..." : "Resume Subscription"}
+                    </Button>
+                  )}
+
+                  {usageQuery.data?.stripeCustomerId && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => organizationId && portalMutation.mutate({ organizationId })}
+                      disabled={portalMutation.isPending}
+                      className="text-xs h-9 font-semibold text-zinc-700 hover:bg-zinc-50 border-zinc-200 flex items-center gap-1.5"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      Manage Invoices
+                    </Button>
+                  )}
+                </div>
               </div>
 
+              {/* Active Stripe Coupon Discount Display */}
               {usageQuery.data?.discountSummary && (
-                <div className="flex items-center justify-between p-3 rounded-lg bg-emerald-50 border border-emerald-150">
-                  <p className="text-xs font-bold text-emerald-800">
-                    🎉 Discount active: {usageQuery.data.discountSummary}
+                <div className="flex items-center justify-between p-3.5 rounded-xl bg-emerald-50/80 border border-emerald-200">
+                  <p className="text-xs font-bold text-emerald-800 flex items-center gap-1.5">
+                    <span>🎉</span> Active Discount Applied: {usageQuery.data.discountSummary}
                   </p>
                   {usageQuery.data.discountEndsAt && (
-                    <p className="text-[10px] font-semibold text-emerald-700">
-                      Ends {new Date(usageQuery.data.discountEndsAt).toLocaleDateString("en-US", { dateStyle: "long" })}
+                    <p className="text-[11px] font-semibold text-emerald-700">
+                      Valid through {new Date(usageQuery.data.discountEndsAt).toLocaleDateString("en-US", { dateStyle: "long" })}
                     </p>
                   )}
                 </div>
               )}
 
-              {/* Real Quotas Usage Progress Gauges */}
-              <div className="space-y-4">
-                <div>
-                  <div className="flex justify-between text-xs font-bold mb-1.5">
-                    <span className="text-zinc-700">AI Call Minutes</span>
-                    <span className="text-zinc-500">
-                      {usageQuery.data?.minutesUsed ?? 0} / {usageQuery.data?.minutesLimit ?? 100} min
-                    </span>
-                  </div>
-                  <div className="h-2 bg-zinc-100 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-indigo-600 rounded-full transition-all duration-500"
-                      style={{
-                        width: `${Math.min(
-                          100,
-                          ((usageQuery.data?.minutesUsed ?? 0) / (usageQuery.data?.minutesLimit ?? 100)) * 100
-                        )}%`,
-                      }}
-                    />
-                  </div>
+              {/* Monthly Quota Gauges */}
+              <div className="space-y-4 pt-2">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Plan Quota Usage</h3>
+                  <span className="text-[11px] text-zinc-400 font-semibold">Refreshes monthly</span>
                 </div>
 
-                <div>
-                  <div className="flex justify-between text-xs font-bold mb-1.5">
-                    <span className="text-zinc-700">Leads Capacity</span>
-                    <span className="text-zinc-500">
-                      {usageQuery.data?.leadsUsed ?? 0} / {usageQuery.data?.leadsLimit ?? 100}
-                    </span>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  {/* Minutes */}
+                  <div className="p-4 rounded-xl border border-zinc-150 bg-zinc-50/50 space-y-2">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="font-bold text-zinc-800 flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5 text-indigo-600" /> AI Call Minutes
+                      </span>
+                      <span className="font-extrabold text-zinc-950">
+                        {usageQuery.data?.minutesUsed ?? 0} / {usageQuery.data?.minutesLimit ?? 1000}
+                      </span>
+                    </div>
+                    <div className="h-2 bg-zinc-200 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-indigo-600 rounded-full transition-all duration-500"
+                        style={{
+                          width: `${Math.min(
+                            100,
+                            ((usageQuery.data?.minutesUsed ?? 0) / (usageQuery.data?.minutesLimit ?? 1000)) * 100
+                          )}%`,
+                        }}
+                      />
+                    </div>
+                    <p className="text-[11px] text-zinc-400 font-medium">Billed by whole minutes rounded up</p>
                   </div>
-                  <div className="h-2 bg-zinc-100 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-emerald-500 rounded-full transition-all duration-500"
-                      style={{
-                        width: `${Math.min(
-                          100,
-                          ((usageQuery.data?.leadsUsed ?? 0) / (usageQuery.data?.leadsLimit ?? 100)) * 100
-                        )}%`,
-                      }}
-                    />
-                  </div>
-                </div>
 
-                <div>
-                  <div className="flex justify-between text-xs font-bold mb-1.5">
-                    <span className="text-zinc-700">Team Members</span>
-                    <span className="text-zinc-500">
-                      {usageQuery.data?.usersUsed ?? 1} / {usageQuery.data?.usersLimit ?? 5}
-                    </span>
+                  {/* Leads */}
+                  <div className="p-4 rounded-xl border border-zinc-150 bg-zinc-50/50 space-y-2">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="font-bold text-zinc-800 flex items-center gap-1.5">
+                        <Users className="w-3.5 h-3.5 text-emerald-600" /> Active Leads
+                      </span>
+                      <span className="font-extrabold text-zinc-950">
+                        {usageQuery.data?.leadsUsed ?? 0} / {usageQuery.data?.leadsLimit ?? 1000}
+                      </span>
+                    </div>
+                    <div className="h-2 bg-zinc-200 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-emerald-500 rounded-full transition-all duration-500"
+                        style={{
+                          width: `${Math.min(
+                            100,
+                            ((usageQuery.data?.leadsUsed ?? 0) / (usageQuery.data?.leadsLimit ?? 1000)) * 100
+                          )}%`,
+                        }}
+                      />
+                    </div>
+                    <p className="text-[11px] text-zinc-400 font-medium">Includes active inbound and imported leads</p>
                   </div>
-                  <div className="h-2 bg-zinc-100 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-amber-500 rounded-full transition-all duration-500"
-                      style={{
-                        width: `${Math.min(
-                          100,
-                          ((usageQuery.data?.usersUsed ?? 1) / (usageQuery.data?.usersLimit ?? 5)) * 100
-                        )}%`,
-                      }}
-                    />
+
+                  {/* Team Members */}
+                  <div className="p-4 rounded-xl border border-zinc-150 bg-zinc-50/50 space-y-2">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="font-bold text-zinc-800 flex items-center gap-1.5">
+                        <ShieldCheck className="w-3.5 h-3.5 text-amber-600" /> Team Seats
+                      </span>
+                      <span className="font-extrabold text-zinc-950">
+                        {usageQuery.data?.usersUsed ?? 1} / {usageQuery.data?.usersLimit ?? 20}
+                      </span>
+                    </div>
+                    <div className="h-2 bg-zinc-200 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-amber-500 rounded-full transition-all duration-500"
+                        style={{
+                          width: `${Math.min(
+                            100,
+                            ((usageQuery.data?.usersUsed ?? 1) / (usageQuery.data?.usersLimit ?? 20)) * 100
+                          )}%`,
+                        }}
+                      />
+                    </div>
+                    <p className="text-[11px] text-zinc-400 font-medium">Owners, admins, managers, and agents</p>
                   </div>
                 </div>
               </div>
 
               <Separator />
 
-              {/* Subscription Plan Tiers */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                {[
-                  {
-                    id: "starter" as const,
-                    name: "Starter",
-                    price: "$97/mo",
-                    features: ["100 Call Minutes", "100 Leads", "5 Team Members", "Standard Support"],
-                  },
-                  {
-                    id: "professional" as const,
-                    name: "Professional",
-                    price: "$297/mo",
-                    features: ["1,000 Call Minutes", "1,000 Leads", "20 Team Members", "Priority AI Queue"],
-                  },
-                  {
-                    id: "enterprise" as const,
-                    name: "Enterprise",
-                    price: "$997/mo",
-                    features: ["5,000 Call Minutes", "10,000 Leads", "Unlimited Team", "Custom AI Voice Training"],
-                  },
-                ].map((planItem) => {
-                  const isCurrent = (usageQuery.data?.plan || "starter") === planItem.id;
-                  return (
-                    <div
-                      key={planItem.id}
-                      className={`p-5 rounded-xl border flex flex-col justify-between transition-all ${
-                        isCurrent
-                          ? "border-indigo-600 bg-indigo-50/20 ring-2 ring-indigo-500/20 shadow-sm"
-                          : "border-zinc-200 bg-white hover:border-zinc-300"
-                      }`}
-                    >
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="font-bold text-zinc-950 text-sm">{planItem.name}</span>
-                          {isCurrent && (
-                            <Badge className="bg-indigo-100 text-indigo-700 hover:bg-indigo-100 text-[10px] font-bold">
-                              Current Plan
-                            </Badge>
-                          )}
-                        </div>
-                        <p className="text-xl font-extrabold text-zinc-950 mb-3">{planItem.price}</p>
-                        <ul className="space-y-1.5 mb-4">
-                          {planItem.features.map((f) => (
-                            <li key={f} className="text-xs text-zinc-600 flex items-center gap-1.5 font-medium">
-                              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
-                              {f}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
+              {/* Approved Production Plan Card */}
+              <div>
+                <div className="mb-4">
+                  <h3 className="text-sm font-bold text-zinc-950">Approved Subscription Plan</h3>
+                  <p className="text-xs text-zinc-500 mt-0.5">
+                    LeadFlow AI all-in-one conversational lead engine for your organization.
+                  </p>
+                </div>
 
+                <div className="max-w-xl mx-auto rounded-2xl border-2 border-indigo-600 bg-white p-6 shadow-md shadow-indigo-100 flex flex-col justify-between relative overflow-hidden">
+                  <div className="absolute top-0 right-0 bg-indigo-600 text-white text-[10px] font-extrabold uppercase tracking-wider px-3.5 py-1 rounded-bl-xl shadow-sm">
+                    30-Day Free Trial
+                  </div>
+
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-xl font-extrabold text-zinc-950">LeadFlow Pro</h4>
+                    </div>
+
+                    <div className="mt-3 flex items-baseline gap-2">
+                      <span className="text-3xl font-black text-zinc-950 tracking-tight">$197</span>
+                      <span className="text-xs font-semibold text-zinc-500">USD / month</span>
+                      <Badge variant="outline" className="ml-2 border-indigo-200 text-indigo-700 bg-indigo-50/50 text-[10px] font-bold">
+                        First 30 Days Free
+                      </Badge>
+                    </div>
+
+                    {/* Clear, transparent trial terms required by client */}
+                    <div className="mt-3 p-3 rounded-lg bg-zinc-50 border border-zinc-150 text-xs text-zinc-700 leading-relaxed font-medium">
+                      <p className="font-semibold text-zinc-900">30-Day Free Trial Guarantee:</p>
+                      Your first 30 days are completely free. You will be charged $197/month after your trial unless you cancel. Cancel anytime with zero penalty.
+                    </div>
+
+                    <div className="mt-5 space-y-2.5">
+                      <p className="text-xs font-bold text-zinc-900 uppercase tracking-wider">Everything included:</p>
+                      <ul className="space-y-2">
+                        {[
+                          "30-day completely free trial (no charge today)",
+                          "1,000 AI Voice Call Minutes / month included",
+                          "1,000 Active Leads & full CRM pipeline",
+                          "Up to 20 Team Members with role management",
+                          "Autonomous AI Voice Receptionist with BYOK & call routing",
+                          "Two-Way SMS, MMS & Email Conversations",
+                          "Calendar integration & automated appointment booking",
+                          "Knowledge Base FAQ and custom prompt tuning",
+                          "Workflow Automations & Instant notifications",
+                          "Stripe promotion code discounts & flexible cancellation",
+                        ].map((feat) => (
+                          <li key={feat} className="text-xs text-zinc-700 flex items-center gap-2 font-medium">
+                            <CheckCircle2 className="w-4 h-4 text-indigo-600 shrink-0" />
+                            <span>{feat}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+
+                  <div className="mt-6 pt-5 border-t border-zinc-150 space-y-3">
+                    {usageQuery.data?.hasAccess && !usageQuery.data.cancelAtPeriodEnd ? (
+                      <div className="space-y-3">
+                        <Button
+                          disabled
+                          className="w-full bg-zinc-100 text-zinc-600 border border-zinc-200 h-10 rounded-xl text-xs font-bold"
+                        >
+                          <CheckCircle2 className="w-4 h-4 mr-1.5 text-emerald-600" />
+                          Current Plan ({usageQuery.data.status === "trialing" ? "Trial Active" : "Active"})
+                        </Button>
+                        <div className="text-center">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCancelFeedbackSuccess(null);
+                              setBillingActionError(null);
+                              setCancelModalOpen(true);
+                            }}
+                            className="text-xs font-semibold text-zinc-400 hover:text-red-600 hover:underline transition-colors"
+                          >
+                            Need to cancel? Click here to manage cancellation
+                          </button>
+                        </div>
+                      </div>
+                    ) : usageQuery.data?.cancelAtPeriodEnd ? (
+                      <div className="space-y-3">
+                        <Button
+                          onClick={() => organizationId && resumeMutation.mutate({ organizationId })}
+                          disabled={resumeMutation.isPending}
+                          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white h-10 rounded-xl text-xs font-bold shadow-md shadow-indigo-600/20"
+                        >
+                          {resumeMutation.isPending ? "Resuming..." : "Resume LeadFlow Pro Subscription"}
+                        </Button>
+                        <p className="text-[11px] text-zinc-500 text-center">
+                          Your cancellation is currently pending for the end of the period.
+                        </p>
+                      </div>
+                    ) : (
                       <Button
-                        variant={isCurrent ? "outline" : "default"}
-                        size="sm"
-                        disabled={isCurrent || checkoutMutation.isPending}
                         onClick={async () => {
                           if (!organizationId) return;
-                          const res = await checkoutMutation.mutateAsync({
-                            organizationId,
-                            plan: planItem.id,
-                            originUrl: window.location.origin,
-                          });
-                          if (res.simulated) {
-                            usageQuery.refetch();
-                          } else if (res.url) {
-                            window.location.href = res.url;
+                          setBillingActionError(null);
+                          try {
+                            const res = await checkoutMutation.mutateAsync({
+                              organizationId,
+                              plan: "professional",
+                              originUrl: window.location.origin,
+                            });
+                            if (res.simulated) {
+                              usageQuery.refetch();
+                            } else if (res.url) {
+                              window.location.href = res.url;
+                            }
+                          } catch (err: unknown) {
+                            setBillingActionError((err as { message?: string }).message || "Failed to initiate checkout.");
                           }
                         }}
-                        className={`w-full text-xs font-bold h-9 rounded-lg ${
-                          isCurrent
-                            ? "border-zinc-200 text-zinc-500"
-                            : "bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm"
-                        }`}
+                        disabled={checkoutMutation.isPending}
+                        className="w-full bg-indigo-600 hover:bg-indigo-700 text-white h-11 rounded-xl text-xs font-extrabold shadow-md shadow-indigo-600/25 flex items-center justify-center gap-2"
                       >
-                        {isCurrent
-                          ? "Current Plan"
-                          : checkoutMutation.isPending
-                          ? "Redirecting..."
-                          : `Upgrade to ${planItem.name}`}
+                        {checkoutMutation.isPending ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                            Connecting to Stripe Checkout...
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="w-4 h-4" />
+                            Start 30-Day Free Trial ($0.00 Today)
+                          </>
+                        )}
                       </Button>
-                    </div>
-                  );
-                })}
+                    )}
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>
+
+          {/* Cancellation Survey & Exit Feedback Dialog */}
+          <Dialog open={cancelModalOpen} onOpenChange={setCancelModalOpen}>
+            <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle className="text-lg font-bold text-zinc-950 flex items-center gap-2">
+                  <AlertTriangle className="w-5 h-5 text-amber-500" />
+                  Subscription Cancellation Survey
+                </DialogTitle>
+                <DialogDescription className="text-xs text-zinc-500 leading-relaxed">
+                  We're truly sorry to see you go. Before cancelling, please take a moment to answer these questions so our product team can understand how to serve you better.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-4 py-2 text-xs">
+                {/* Question 1: Main reason */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold text-zinc-800">
+                    1. What is the primary reason you're cancelling? <span className="text-red-500">*</span>
+                  </Label>
+                  <Select
+                    value={cancelReason}
+                    onValueChange={(val) => setCancelReason(val as typeof cancelReason)}
+                  >
+                    <SelectTrigger className="text-xs h-9">
+                      <SelectValue placeholder="Select primary reason" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="too_expensive">Too expensive ($197/mo doesn't fit my budget)</SelectItem>
+                      <SelectItem value="not_enough_value">Not getting enough value</SelectItem>
+                      <SelectItem value="missing_feature">Missing a feature I need</SelectItem>
+                      <SelectItem value="too_difficult">Too difficult to set up or use</SelectItem>
+                      <SelectItem value="business_circumstances_changed">Business circumstances changed</SelectItem>
+                      <SelectItem value="not_enough_leads">Not enough customer calls / leads</SelectItem>
+                      <SelectItem value="technical_problems">Technical bugs or reliability issues</SelectItem>
+                      <SelectItem value="other">Other reason</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Additional elaboration for reason */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-zinc-700">
+                    Could you share a little more detail about this reason?
+                  </Label>
+                  <Textarea
+                    placeholder="Elaborate on why this influenced your decision..."
+                    value={cancelReasonDetails}
+                    onChange={(e) => setCancelReasonDetails(e.target.value)}
+                    className="text-xs min-h-[60px]"
+                  />
+                </div>
+
+                {/* Question 2: What could we have done better? */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold text-zinc-800">
+                    2. What could we have done better?
+                  </Label>
+                  <Textarea
+                    placeholder="Onboarding, AI call quality, SMS workflows, customer support, pricing..."
+                    value={cancelWhatBetter}
+                    onChange={(e) => setCancelWhatBetter(e.target.value)}
+                    className="text-xs min-h-[60px]"
+                  />
+                </div>
+
+                {/* Question 3: Missing features */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold text-zinc-800">
+                    3. What feature were you expecting that was missing?
+                  </Label>
+                  <Textarea
+                    placeholder="Specific CRM integrations, voice accents, scheduling tools, analytics..."
+                    value={cancelMissingFeature}
+                    onChange={(e) => setCancelMissingFeature(e.target.value)}
+                    className="text-xs min-h-[60px]"
+                  />
+                </div>
+
+                {/* Question 4: Likelihood to return */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold text-zinc-800">
+                    4. How likely are you to consider returning to LeadFlow in the future?
+                  </Label>
+                  <Select
+                    value={cancelLikelihood}
+                    onValueChange={(val) => setCancelLikelihood(val as typeof cancelLikelihood)}
+                  >
+                    <SelectTrigger className="text-xs h-9">
+                      <SelectValue placeholder="Select likelihood" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="very_likely">Very Likely</SelectItem>
+                      <SelectItem value="likely">Likely</SelectItem>
+                      <SelectItem value="neutral">Neutral / Unsure</SelectItem>
+                      <SelectItem value="unlikely">Unlikely</SelectItem>
+                      <SelectItem value="very_unlikely">Very Unlikely</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Question 5: Additional comments */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold text-zinc-800">
+                    5. Additional comments or feedback for our team (optional)
+                  </Label>
+                  <Textarea
+                    placeholder="Any final thoughts or suggestions..."
+                    value={cancelComments}
+                    onChange={(e) => setCancelComments(e.target.value)}
+                    className="text-xs min-h-[60px]"
+                  />
+                </div>
+
+                {/* Cancellation Timing / Notice */}
+                <div className="p-3 rounded-lg bg-amber-50/70 border border-amber-200 text-xs text-amber-900 leading-relaxed">
+                  <p className="font-bold text-amber-950">Important Billing Notice:</p>
+                  Your cancellation will stop all future renewals. You will retain full access until{" "}
+                  <span className="font-semibold text-zinc-950">
+                    {usageQuery.data?.currentPeriodEnd
+                      ? new Date(usageQuery.data.currentPeriodEnd).toLocaleDateString("en-US", { dateStyle: "long" })
+                      : "the end of your current period"}
+                  </span>
+                  . No further charges will be made.
+                </div>
+              </div>
+
+              <DialogFooter className="flex flex-col sm:flex-row gap-2 pt-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCancelModalOpen(false)}
+                  className="text-xs font-semibold"
+                >
+                  Keep My Subscription
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  disabled={cancelMutation.isPending}
+                  onClick={() => {
+                    if (!organizationId) return;
+                    cancelMutation.mutate({
+                      organizationId,
+                      reason: cancelReason,
+                      reasonDetails: cancelReasonDetails || undefined,
+                      whatCouldBeBetter: cancelWhatBetter || undefined,
+                      missingFeatureExpected: cancelMissingFeature || undefined,
+                      likelihoodToReturn: cancelLikelihood,
+                      additionalComments: cancelComments || undefined,
+                      cancelImmediately: false,
+                    });
+                  }}
+                  className="text-xs font-bold"
+                >
+                  {cancelMutation.isPending ? "Processing Cancellation..." : "Submit Feedback & Confirm Cancellation"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </TabsContent>
       </Tabs>
     </div>

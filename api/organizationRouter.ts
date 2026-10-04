@@ -115,9 +115,9 @@ export const organizationRouter = createRouter({
 
         await createSubscription({
           organizationId: org.id,
-          plan: "starter",
-          status: "trialing",
-          ...PLAN_LIMITS.starter,
+          plan: "professional",
+          status: "incomplete",
+          ...PLAN_LIMITS.professional,
         });
       }
 

@@ -117,7 +117,7 @@ export default function Onboarding() {
     onSuccess: async () => {
       setError(null);
       await refreshOrganizations();
-      navigate("/");
+      navigate("/settings?tab=billing&setup=pro");
     },
     onError: (err) => {
       setError(formatZodError(err.message || "Failed to complete onboarding. Please check your connection and try again."));

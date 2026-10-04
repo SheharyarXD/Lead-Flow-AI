@@ -537,12 +537,15 @@ export const subscriptions = mysqlTable(
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
     plan: mysqlEnum("plan", ["starter", "professional", "enterprise"]).notNull(),
-    status: mysqlEnum("status", ["trialing", "active", "past_due", "cancelled", "paused"]).default("trialing").notNull(),
+    status: mysqlEnum("status", ["trialing", "active", "past_due", "cancelled", "paused", "incomplete"]).default("incomplete").notNull(),
     stripeCustomerId: varchar("stripeCustomerId", { length: 255 }),
     stripeSubscriptionId: varchar("stripeSubscriptionId", { length: 255 }),
+    trialEndsAt: timestamp("trialEndsAt"),
     currentPeriodStart: timestamp("currentPeriodStart"),
     currentPeriodEnd: timestamp("currentPeriodEnd"),
     cancelAtPeriodEnd: boolean("cancelAtPeriodEnd").default(false),
+    cancelledAt: timestamp("cancelledAt"),
+    cancellationReason: varchar("cancellationReason", { length: 255 }),
     minutesIncluded: int("minutesIncluded").default(100),
     minutesUsed: int("minutesUsed").default(0),
     leadsLimit: int("leadsLimit").default(100),
@@ -572,6 +575,36 @@ export const stripeEvents = mysqlTable("stripeEvents", {
   type: varchar("type", { length: 100 }).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
+
+// ─── Cancellation Surveys ────────────────────────────────────────────────
+export const cancellationSurveys = mysqlTable(
+  "cancellationSurveys",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: bigint("organizationId", { mode: "number", unsigned: true })
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    userId: bigint("userId", { mode: "number", unsigned: true }).references(() => users.id, {
+      onDelete: "set null",
+    }),
+    stripeSubscriptionId: varchar("stripeSubscriptionId", { length: 255 }),
+    stripeCustomerId: varchar("stripeCustomerId", { length: 255 }),
+    reason: varchar("reason", { length: 255 }).notNull(),
+    reasonDetails: text("reasonDetails"),
+    whatCouldBeBetter: text("whatCouldBeBetter"),
+    missingFeatureExpected: text("missingFeatureExpected"),
+    likelihoodToReturn: varchar("likelihoodToReturn", { length: 50 }),
+    additionalComments: text("additionalComments"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    orgIdx: index("cancel_survey_org_idx").on(table.organizationId),
+    userIdx: index("cancel_survey_user_idx").on(table.userId),
+  })
+);
+
+export type CancellationSurvey = typeof cancellationSurveys.$inferSelect;
+export type InsertCancellationSurvey = typeof cancellationSurveys.$inferInsert;
 
 // ─── Knowledge Base ──────────────────────────────────────────────────────
 export const knowledgeBase = mysqlTable(

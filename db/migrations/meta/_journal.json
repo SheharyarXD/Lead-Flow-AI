@@ -71,6 +71,13 @@
       "when": 1786898518983,
       "tag": "0009_add_automation_trigger_tracking_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "5",
+      "when": 1786900000000,
+      "tag": "0010_add_cancellation_surveys_and_trial_fields",
+      "breakpoints": true
     }
   ]
 }

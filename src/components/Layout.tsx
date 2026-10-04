@@ -25,6 +25,7 @@ import {
   CheckSquare,
   BarChart3,
   Zap,
+  Sparkles,
 } from "lucide-react";
 
 const navItems = [
@@ -57,24 +58,51 @@ export default function Layout() {
   );
   const unreadCount = conversationStats?.unread ?? 0;
 
-  const getTrialDays = () => {
-    if (subLoading) return { label: "loading...", percent: 0 };
-    if (!subscription) return { label: "No Active Plan", percent: 0 };
+  const getSubscriptionInfo = () => {
+    if (subLoading) return { label: "Loading...", statusText: "Subscription", percent: 0, isUrgent: false };
+    if (!subscription) return { label: "Start 30-Day Trial", statusText: "No Plan", percent: 0, isUrgent: true };
 
-    const end = subscription.currentPeriodEnd
-      ? new Date(subscription.currentPeriodEnd)
-      : new Date(new Date(subscription.createdAt).getTime() + 30 * 24 * 60 * 60 * 1000);
+    if (subscription.status === "trialing") {
+      const trialEndDate = subscription.trialEndsAt
+        ? new Date(subscription.trialEndsAt)
+        : subscription.currentPeriodEnd
+        ? new Date(subscription.currentPeriodEnd)
+        : null;
 
-    const diffTime = end.getTime() - Date.now();
-    const daysRemaining = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
-    const percent = Math.min(100, Math.max(0, (daysRemaining / 30) * 100));
+      if (!trialEndDate) {
+        return { label: "30-Day Trial", statusText: "Free Trial", percent: 100, isUrgent: false };
+      }
 
-    return {
-      label: `${daysRemaining} days left`,
-      percent,
-    };
+      const diffTime = trialEndDate.getTime() - Date.now();
+      const daysRemaining = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+      const percent = Math.min(100, Math.max(0, (daysRemaining / 30) * 100));
+
+      return {
+        label: `${daysRemaining} ${daysRemaining === 1 ? "day" : "days"} left`,
+        statusText: "Free Trial",
+        percent,
+        isUrgent: daysRemaining <= 3,
+      };
+    }
+
+    if (subscription.status === "active") {
+      if (subscription.cancelAtPeriodEnd) {
+        return { label: "Cancels soon", statusText: "Scheduled Cancel", percent: 100, isUrgent: true };
+      }
+      return { label: "LeadFlow Pro", statusText: "Active Plan", percent: 100, isUrgent: false };
+    }
+
+    if (subscription.status === "past_due") {
+      return { label: "Past Due", statusText: "Billing Alert", percent: 0, isUrgent: true };
+    }
+
+    if (subscription.status === "cancelled") {
+      return { label: "Cancelled", statusText: "Inactive", percent: 0, isUrgent: true };
+    }
+
+    return { label: "Activate Trial", statusText: "LeadFlow Pro", percent: 0, isUrgent: true };
   };
-  const trialDays = getTrialDays();
+  const subInfo = getSubscriptionInfo();
 
   useEffect(() => {
     if (isMobile) setSidebarOpen(false);
@@ -217,14 +245,26 @@ export default function Layout() {
 
         {/* Sidebar Footer Widgets */}
         <div className="border-t border-zinc-100 shrink-0">
-          {/* Trial Status Widget */}
-          <div className="mx-3.5 mt-4 p-3 bg-zinc-50 border border-zinc-100 rounded-xl">
+          {/* Subscription Status Widget */}
+          <div
+            onClick={() => navigate("/settings?tab=billing")}
+            className="mx-3.5 mt-4 p-3 bg-zinc-50 border border-zinc-100 rounded-xl cursor-pointer hover:bg-zinc-100/70 transition-colors"
+            title="Click to manage subscription"
+          >
             <div className="flex justify-between text-xs font-semibold text-zinc-500 mb-1.5">
-              <span>Trial Status</span>
-              <span className="text-indigo-600">{trialDays.label}</span>
+              <span>{subInfo.statusText}</span>
+              <span className={subInfo.isUrgent ? "text-amber-600 font-bold" : "text-indigo-600 font-bold"}>
+                {subInfo.label}
+              </span>
             </div>
             <div className="h-1.5 w-full bg-zinc-200 rounded-full overflow-hidden">
-              <div className="h-full bg-indigo-600 rounded-full transition-all duration-350" style={{ width: `${trialDays.percent}%` }} />
+              <div
+                className={cn(
+                  "h-full rounded-full transition-all duration-350",
+                  subInfo.isUrgent ? "bg-amber-500" : "bg-indigo-600"
+                )}
+                style={{ width: `${subInfo.percent}%` }}
+              />
             </div>
           </div>
 
@@ -292,6 +332,27 @@ export default function Layout() {
             <span className="font-bold text-zinc-900 text-sm">LeadFlow AI</span>
           </header>
         )}
+
+        {/* Unactivated / Free Trial Activation Banner */}
+        {organization?.onboardingCompletedAt &&
+          (subscription?.status === "incomplete" || subscription?.status === "cancelled") &&
+          location.pathname !== "/settings" && (
+            <div className="bg-gradient-to-r from-indigo-50 via-indigo-50/60 to-white border-b border-indigo-150 px-6 py-2.5 flex items-center justify-between gap-4 shrink-0 shadow-xs">
+              <div className="flex items-center gap-2.5 text-xs text-indigo-950 font-medium">
+                <Sparkles className="w-4 h-4 text-indigo-600 shrink-0" />
+                <span>
+                  Activate your <strong className="font-bold text-indigo-900">30-day free trial</strong> of LeadFlow Pro to unlock autonomous AI calls, SMS, and lead generation.
+                </span>
+              </div>
+              <Button
+                size="sm"
+                onClick={() => navigate("/settings?tab=billing")}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-7 px-3 rounded-lg shrink-0 shadow-xs"
+              >
+                Start Free Trial
+              </Button>
+            </div>
+          )}
 
         {/* Page Content */}
         <main className="flex-1 overflow-auto bg-[#fcfcfd]">

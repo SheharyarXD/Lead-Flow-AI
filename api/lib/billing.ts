@@ -3,9 +3,15 @@ import { TRPCError } from "@trpc/server";
 import { getDb } from "../queries/connection";
 import { subscriptions, leads, organizationMembers } from "@db/schema";
 
+export const PRODUCT_NAME = "LeadFlow Pro";
+export const PRODUCT_PRICE_USD = 197;
+export const TRIAL_DAYS = 30;
+
 export const PLAN_PRICES = {
+  // LeadFlow Pro is the client's approved production subscription ($197/mo, 30-day trial)
+  professional: process.env.STRIPE_PRICE_ID || process.env.STRIPE_PRICE_PRO || "price_leadflow_pro",
+  // Fallbacks / legacy aliases for backwards compatibility
   starter: process.env.STRIPE_PRICE_STARTER || "price_mock_starter",
-  professional: process.env.STRIPE_PRICE_PRO || "price_mock_pro",
   enterprise: process.env.STRIPE_PRICE_ENTERPRISE || "price_mock_enterprise",
 } as const;
 
@@ -14,25 +20,14 @@ export type PlanId = keyof typeof PLAN_PRICES;
 export function planFromPriceId(priceId: string | null | undefined): PlanId | null {
   if (!priceId) return null;
   const entry = (Object.entries(PLAN_PRICES) as [PlanId, string][]).find(([, id]) => id === priceId);
-  return entry ? entry[0] : null;
+  return entry ? entry[0] : "professional";
 }
 
-// The single source of truth for what each plan promises — matches the pricing
-// copy on the Billing tab (src/pages/Settings.tsx) exactly: Starter "100 Call
-// Minutes / 100 Leads / 5 Team Members", Professional "1,000 / 1,000 / 20",
-// Enterprise "5,000 / 10,000 / Unlimited Team". Every place that creates or
-// upgrades a subscription reads from here — before this, leadsLimit/
-// minutesIncluded were sourced from here but usersLimit was hardcoded
-// separately in three different places (2, 2, and 5), none of which matched
-// what the pricing page actually promises.
+// Single source of truth for quotas:
+// LeadFlow Pro includes 1,000 call minutes, 1,000 leads, 20 team members.
 export const PLAN_LIMITS: Record<PlanId, { leadsLimit: number; minutesIncluded: number; usersLimit: number }> = {
-  starter: { leadsLimit: 100, minutesIncluded: 100, usersLimit: 5 },
   professional: { leadsLimit: 1000, minutesIncluded: 1000, usersLimit: 20 },
-  // The pricing page promises "Unlimited Team" for Enterprise. usersLimit is a
-  // plain non-nullable int column, so there's no literal "no limit" value to
-  // store — a large sentinel that's unreachable in practice reads the same as
-  // unlimited without a special-cased "is this unlimited?" branch anywhere
-  // that consumes it.
+  starter: { leadsLimit: 100, minutesIncluded: 100, usersLimit: 5 },
   enterprise: { leadsLimit: 10000, minutesIncluded: 5000, usersLimit: 999999 },
 };
 
@@ -40,9 +35,6 @@ export async function getOrgSubscription(organizationId: number) {
   return getDb().query.subscriptions.findFirst({ where: eq(subscriptions.organizationId, organizationId) });
 }
 
-// The one place usage is computed — billingRouter.getUsage (what the Billing
-// tab renders) and the enforcement checks below both call this, so the number
-// a user sees and the number that blocks them can never drift apart.
 export async function getUsageSnapshot(organizationId: number) {
   const db = getDb();
 
@@ -52,7 +44,25 @@ export async function getUsageSnapshot(organizationId: number) {
     .from(organizationMembers)
     .where(eq(organizationMembers.organizationId, organizationId));
   const sub = await getOrgSubscription(organizationId);
-  const limits = PLAN_LIMITS[(sub?.plan as PlanId) ?? "starter"];
+  const planKey = (sub?.plan as PlanId) ?? "professional";
+  const limits = PLAN_LIMITS[planKey] ?? PLAN_LIMITS.professional;
+
+  // Determine trial dates and remaining time
+  const now = Date.now();
+  const trialEnd = sub?.trialEndsAt
+    ? new Date(sub.trialEndsAt).getTime()
+    : sub?.status === "trialing" && sub?.currentPeriodEnd
+    ? new Date(sub.currentPeriodEnd).getTime()
+    : null;
+
+  let daysRemainingInTrial = 0;
+  if (trialEnd && sub?.status === "trialing") {
+    daysRemainingInTrial = Math.max(0, Math.ceil((trialEnd - now) / (1000 * 60 * 60 * 24)));
+  }
+
+  const isTrialActive = sub?.status === "trialing" && (trialEnd ? trialEnd > now : true);
+  const isPaidActive = sub?.status === "active";
+  const hasAccess = isPaidActive || isTrialActive;
 
   return {
     leadsUsed: leadsRes?.count ?? 0,
@@ -61,54 +71,83 @@ export async function getUsageSnapshot(organizationId: number) {
     usersLimit: sub?.usersLimit ?? limits.usersLimit,
     minutesUsed: sub?.minutesUsed ?? 0,
     minutesLimit: sub?.minutesIncluded ?? limits.minutesIncluded,
-    plan: sub?.plan ?? "starter",
-    status: sub?.status ?? "active",
+    plan: sub?.plan ?? "professional",
+    planName: PRODUCT_NAME,
+    status: sub?.status ?? "incomplete",
+    isTrialActive,
+    isPaidActive,
+    hasAccess,
+    daysRemainingInTrial,
+    trialEndsAt: sub?.trialEndsAt ?? null,
+    currentPeriodStart: sub?.currentPeriodStart ?? null,
+    currentPeriodEnd: sub?.currentPeriodEnd ?? null,
+    cancelAtPeriodEnd: sub?.cancelAtPeriodEnd ?? false,
+    cancelledAt: sub?.cancelledAt ?? null,
+    cancellationReason: sub?.cancellationReason ?? null,
+    stripeCustomerId: sub?.stripeCustomerId ?? null,
+    stripeSubscriptionId: sub?.stripeSubscriptionId ?? null,
     discountSummary: sub?.discountSummary ?? null,
     discountEndsAt: sub?.discountEndsAt ?? null,
   };
 }
 
-// These three gate the exact fields the Billing tab already displays via
-// getUsageSnapshot — until now those numbers were tracked and shown but never
-// actually enforced. The pricing page states fixed per-plan caps ("100
-// Leads", "5 Team Members", "100 Call Minutes") with no "up to" or "soft
-// limit" language, so the promised behavior is a hard block at the cap, not a
-// warn-and-allow — consistent with how every other plan-gated action in this
-// app already fails closed (e.g. billing/checkout refusing to grant paid
-// entitlements without a real Stripe configuration).
+// Payment Gating: Verifies that the tenant has an active subscription or unexpired trial
+export async function assertSubscriptionActive(organizationId: number) {
+  const usage = await getUsageSnapshot(organizationId);
+
+  if (!usage.hasAccess) {
+    if (usage.status === "past_due") {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: "Your subscription payment is past due. Please update your payment method under Settings > Billing.",
+      });
+    }
+    if (usage.status === "cancelled") {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: "Your LeadFlow Pro subscription has been cancelled. Please re-activate under Settings > Billing.",
+      });
+    }
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "An active LeadFlow Pro subscription or 30-day free trial is required. Activate your trial under Settings > Billing.",
+    });
+  }
+}
+
 export async function assertLeadsLimitNotExceeded(organizationId: number) {
+  await assertSubscriptionActive(organizationId);
   const usage = await getUsageSnapshot(organizationId);
   if (usage.leadsUsed >= usage.leadsLimit) {
     throw new TRPCError({
       code: "FORBIDDEN",
-      message: `You've reached your plan's lead limit (${usage.leadsUsed}/${usage.leadsLimit}). Upgrade to add more.`,
+      message: `You've reached your plan's lead limit (${usage.leadsUsed}/${usage.leadsLimit}).`,
     });
   }
 }
 
 export async function assertUsersLimitNotExceeded(organizationId: number) {
+  await assertSubscriptionActive(organizationId);
   const usage = await getUsageSnapshot(organizationId);
   if (usage.usersUsed >= usage.usersLimit) {
     throw new TRPCError({
       code: "FORBIDDEN",
-      message: `You've reached your plan's team member limit (${usage.usersUsed}/${usage.usersLimit}). Upgrade to add more.`,
+      message: `You've reached your plan's team member limit (${usage.usersUsed}/${usage.usersLimit}).`,
     });
   }
 }
 
 export async function assertMinutesNotExceeded(organizationId: number) {
+  await assertSubscriptionActive(organizationId);
   const usage = await getUsageSnapshot(organizationId);
   if (usage.minutesUsed >= usage.minutesLimit) {
     throw new TRPCError({
       code: "FORBIDDEN",
-      message: `You've reached your plan's call minutes limit (${usage.minutesUsed}/${usage.minutesLimit}). Upgrade to add more.`,
+      message: `You've reached your plan's call minutes limit (${usage.minutesUsed}/${usage.minutesLimit}).`,
     });
   }
 }
 
-// Twilio's CallDuration/status-callback duration is in whole seconds; billed
-// minutes round up so a 1-second call still consumes 1 minute, matching how
-// Twilio itself bills voice minutes.
 export async function recordCallMinutesUsed(organizationId: number, durationSeconds: number) {
   if (durationSeconds <= 0) return;
   const minutes = Math.ceil(durationSeconds / 60);
@@ -117,3 +156,4 @@ export async function recordCallMinutesUsed(organizationId: number, durationSeco
     .set({ minutesUsed: sql`${subscriptions.minutesUsed} + ${minutes}` })
     .where(eq(subscriptions.organizationId, organizationId));
 }
+

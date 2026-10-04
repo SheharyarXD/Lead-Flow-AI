@@ -4,25 +4,63 @@ import { TRPCError } from "@trpc/server";
 import { Session } from "@contracts/constants";
 import { getSessionCookieOptions } from "./lib/cookies";
 import { createRouter, authedQuery, publicQuery } from "./middleware";
-import { findUserByEmail, createUser } from "./queries/users";
+import { findUserByEmail, createUser, countUsers } from "./queries/users";
 import {
   createOrganization,
   addOrganizationMember,
   createSubscription,
 } from "./queries/organizations";
 import { hashPassword, verifyPassword } from "./lib/crypto";
-import { signSessionToken } from "./kimi/session";
+import { signSessionToken } from "./auth/session";
 import { createHash, randomBytes } from "crypto";
 import { consumePasswordResetToken, createPasswordResetToken, updateUserPassword } from "./queries/users";
 import { PLAN_LIMITS } from "./lib/billing";
+import { sendEmail } from "./lib/email";
+import { env } from "./lib/env";
 
 const passwordSchema = z.string().min(8, "Password must be at least 8 characters")
   .refine((value) => /[A-Z]/.test(value), "Password must contain at least one capital letter")
   .refine((value) => /\d/.test(value), "Password must contain at least one number");
 const hashResetToken = (token: string) => createHash("sha256").update(token).digest("hex");
 
+// Public registration normally creates a plain tenant user. The one exception
+// is bootstrapping the platform operator on a brand-new installation, since
+// nothing else in the app can ever grant the "admin" role:
+//   * ADMIN_EMAIL set  — only that exact address becomes the operator. This is
+//     the safe option for a deployment that is publicly reachable before the
+//     operator has registered.
+//   * ADMIN_EMAIL unset — the very first account to register becomes the
+//     operator, so a fresh install is never left with an unreachable admin
+//     console. Every subsequent signup is a normal user.
+async function resolveSignupRole(email: string): Promise<"user" | "admin"> {
+  if (env.adminEmail) {
+    return email.toLowerCase() === env.adminEmail ? "admin" : "user";
+  }
+  return (await countUsers()) === 0 ? "admin" : "user";
+}
+
+// Absolute base URL for links we put in outbound mail. Prefers the explicitly
+// configured public URL, falling back to the Host header of the request that
+// triggered the mail (same convention as organizationRouter's invite links).
+function originFromRequest(req: Request): string {
+  if (process.env.PUBLIC_URL) return process.env.PUBLIC_URL.replace(/\/+$/, "");
+  const host = req.headers.get("host") || "localhost:3000";
+  const proto = host.startsWith("localhost") || host.startsWith("127.0.0.1") ? "http" : "https";
+  return `${proto}://${host}`;
+}
+
+// The session context carries the full users row, hash included, because
+// authenticateRequest loads it to verify the session. Nothing outside the
+// server may see that column — strip it at every boundary that returns the
+// caller's own account. See api/queries/userColumns.ts.
+function toPublicUser<T extends { passwordHash?: string }>(user: T): Omit<T, "passwordHash"> {
+  const rest = { ...user };
+  delete (rest as { passwordHash?: string }).passwordHash;
+  return rest;
+}
+
 export const authRouter = createRouter({
-  me: authedQuery.query((opts) => opts.ctx.user),
+  me: authedQuery.query((opts) => toPublicUser(opts.ctx.user)),
 
   login: publicQuery
     .input(
@@ -64,7 +102,7 @@ export const authRouter = createRouter({
         }),
       );
 
-      return user;
+      return toPublicUser(user);
     }),
 
   signup: publicQuery
@@ -91,8 +129,7 @@ export const authRouter = createRouter({
         name: input.name,
         passwordHash,
         avatar: "",
-        // Public registration can only create a standard platform user.
-        role: "user",
+        role: await resolveSignupRole(input.email),
       });
 
       if (!newUser) {
@@ -118,14 +155,14 @@ export const authRouter = createRouter({
           isDefault: true,
         });
 
-        // Set up a default subscription plan
+        // Set up a default subscription plan (pending Stripe checkout)
         await createSubscription({
           organizationId: org.id,
-          plan: "starter",
-          status: "active",
+          plan: "professional",
+          status: "incomplete",
           minutesUsed: 0,
           features: ["ai_calls", "sms", "email"],
-          ...PLAN_LIMITS.starter,
+          ...PLAN_LIMITS.professional,
         });
       }
 
@@ -134,15 +171,39 @@ export const authRouter = createRouter({
 
   forgotPassword: publicQuery
     .input(z.object({ email: z.string().email() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const user = await findUserByEmail(input.email);
       // Do not reveal whether an email is registered.
       if (!user) return { success: true };
       const rawToken = randomBytes(32).toString("hex");
       await createPasswordResetToken(user.id, hashResetToken(rawToken), new Date(Date.now() + 60 * 60 * 1000));
-      // A mail delivery implementation can consume this value. It is intentionally
-      // exposed only outside production to support a basic local MVP reset flow.
-      return { success: true, ...(process.env.NODE_ENV !== "production" ? { resetToken: rawToken } : {}) };
+
+      // Deliver the token. The reset screen accepts the raw token directly, so
+      // the mail carries both the token and a prefilled link. Sent through the
+      // platform SMTP configuration rather than any tenant's own — a password
+      // reset is an account-level action, not an organization-level one.
+      //
+      // sendEmail returns a "development_not_sent" marker instead of throwing
+      // when SMTP is unconfigured, so a deployment without mail credentials
+      // still stores a usable token rather than failing the whole request.
+      const resetUrl = `${originFromRequest(ctx.req)}/login?reset_token=${rawToken}`;
+      try {
+        await sendEmail(
+          user.email,
+          "Reset your password",
+          `Hi ${user.name || "there"},\n\n` +
+            `We received a request to reset your password.\n\n` +
+            `Reset link: ${resetUrl}\n\n` +
+            `Or paste this token into the reset form:\n${rawToken}\n\n` +
+            `This link expires in 1 hour. If you didn't request it, you can ignore this email — your password will not change.`
+        );
+      } catch (error) {
+        // Never surface a mail failure to the caller: doing so would reveal
+        // that the address is registered. The token is already stored.
+        console.error("[auth] Failed to send password reset email:", error);
+      }
+
+      return { success: true, ...(env.isProduction ? {} : { resetToken: rawToken }) };
     }),
 
   resetPassword: publicQuery
