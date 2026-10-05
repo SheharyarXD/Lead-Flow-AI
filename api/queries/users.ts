@@ -1,17 +1,7 @@
-import { and, eq, gt, isNull } from "drizzle-orm";
+import { and, count, eq, gt, isNull } from "drizzle-orm";
 import * as schema from "@db/schema";
 import type { InsertUser } from "@db/schema";
 import { getDb } from "./connection";
-import { env } from "../lib/env";
-
-export async function findUserByUnionId(unionId: string) {
-  const rows = await getDb()
-    .select()
-    .from(schema.users)
-    .where(eq(schema.users.unionId, unionId))
-    .limit(1);
-  return rows.at(0);
-}
 
 export async function findUserById(id: number) {
   const rows = await getDb()
@@ -57,24 +47,9 @@ export async function consumePasswordResetToken(tokenHash: string) {
   return token;
 }
 
-export async function upsertUser(data: InsertUser) {
-  const values = { ...data };
-  const updateSet: Partial<InsertUser> = {
-    lastSignInAt: new Date(),
-    ...data,
-  };
-
-  if (
-    values.role === undefined &&
-    values.unionId &&
-    values.unionId === env.ownerUnionId
-  ) {
-    values.role = "admin";
-    updateSet.role = "admin";
-  }
-
-  await getDb()
-    .insert(schema.users)
-    .values(values)
-    .onDuplicateKeyUpdate({ set: updateSet });
+// Used to decide whether a newly registering account should be granted the
+// platform-operator role. See resolveSignupRole in api/auth-router.ts.
+export async function countUsers(): Promise<number> {
+  const [row] = await getDb().select({ count: count() }).from(schema.users);
+  return row?.count ?? 0;
 }

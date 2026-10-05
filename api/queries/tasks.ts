@@ -1,4 +1,5 @@
 import { getDb } from "./connection";
+import { SAFE_USER_COLUMNS } from "./userColumns";
 import { tasks } from "@db/schema";
 import { eq, and, or, desc, count, lte } from "drizzle-orm";
 import type { InferInsertModel } from "drizzle-orm";
@@ -30,7 +31,7 @@ export async function findTasksByOrganization(organizationId: number, filters?: 
     with: {
       customer: true,
       lead: true,
-      assignedUser: true,
+      assignedUser: { columns: SAFE_USER_COLUMNS },
     },
     orderBy: [desc(tasks.createdAt)],
     limit,
@@ -44,7 +45,7 @@ export async function findTaskById(id: number) {
     with: {
       customer: true,
       lead: true,
-      assignedUser: true,
+      assignedUser: { columns: SAFE_USER_COLUMNS },
     },
   });
 }

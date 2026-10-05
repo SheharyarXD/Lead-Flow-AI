@@ -1,4 +1,5 @@
 import { getDb } from "./connection";
+import { SAFE_USER_COLUMNS } from "./userColumns";
 import { appointments } from "@db/schema";
 import { eq, and, gte, lte, count } from "drizzle-orm";
 import type { InferInsertModel } from "drizzle-orm";
@@ -28,7 +29,7 @@ export async function findAppointmentsByOrganization(organizationId: number, fil
     with: {
       customer: true,
       lead: true,
-      assignedUser: true,
+      assignedUser: { columns: SAFE_USER_COLUMNS },
     },
     orderBy: [appointments.startTime],
     limit,
@@ -42,7 +43,7 @@ export async function findAppointmentById(id: number) {
     with: {
       customer: true,
       lead: true,
-      assignedUser: true,
+      assignedUser: { columns: SAFE_USER_COLUMNS },
     },
   });
 }

@@ -19,11 +19,17 @@ function requiredSecret(name: string, minLength = 32): string {
 }
 
 export const env = {
-  appId: required("APP_ID"),
+  // Signs session JWTs and derives the encryption key for tenant-supplied
+  // secrets (see api/lib/crypto.ts). Changing it in an existing installation
+  // invalidates every session AND makes every stored Twilio/SMTP/OpenAI
+  // credential permanently undecryptable — treat it as immutable once set.
   appSecret: requiredSecret("APP_SECRET"),
   isProduction: process.env.NODE_ENV === "production",
   databaseUrl: required("DATABASE_URL"),
-  kimiAuthUrl: required("KIMI_AUTH_URL"),
-  kimiOpenUrl: required("KIMI_OPEN_URL"),
-  ownerUnionId: process.env.OWNER_UNION_ID ?? "",
+  // Optional. When set, the account registering with this address is granted
+  // the platform-operator role ("admin") instead of a plain tenant user. When
+  // it is NOT set, the first account ever registered becomes the operator, so
+  // a fresh installation is never left without an administrator — see
+  // api/auth-router.ts. Prefer setting it explicitly on a public deployment.
+  adminEmail: (process.env.ADMIN_EMAIL ?? "").trim().toLowerCase(),
 };

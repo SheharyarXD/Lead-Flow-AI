@@ -1,5 +1,5 @@
 export const Session = {
-  cookieName: "kimi_sid",
+  cookieName: "leadflow_sid",
   maxAgeMs: 7 * 24 * 60 * 60 * 1000,
 } as const;
 
@@ -10,5 +10,4 @@ export const ErrorMessages = {
 
 export const Paths = {
   login: "/login",
-  oauthCallback: "/api/oauth/callback",
 } as const;

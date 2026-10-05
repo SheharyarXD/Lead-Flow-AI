@@ -56,6 +56,7 @@ export function AttachmentsSection({ leadId, customerId }: AttachmentsSectionPro
   );
 
   const getPresignedUrlMutation = trpc.document.getPresignedUploadUrl.useMutation();
+  const getDownloadUrlMutation = trpc.document.getDownloadUrl.useMutation();
   const confirmUploadMutation = trpc.document.confirmUpload.useMutation();
   const deleteMutation = trpc.document.delete.useMutation({
     onSuccess: () => {
@@ -151,26 +152,25 @@ export function AttachmentsSection({ leadId, customerId }: AttachmentsSectionPro
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
-  const handleDownload = (doc: { url: string; fileName: string }) => {
-    if (doc.url.includes("storage.leadflowai.com") || doc.url.includes("mock/")) {
-      const dummyContent = `LeadFlow AI - Document Preview\n\nFilename: ${doc.fileName}\nUploaded Date: ${new Date().toLocaleDateString()}\n\n[Development Mode]: AWS S3 credentials not set in .env. New uploads will retain local contents.`;
-      const blob = new Blob([dummyContent], { type: "text/plain" });
-      const blobUrl = URL.createObjectURL(blob);
+  // Asks the server for a short-lived signed URL rather than navigating to the
+  // stored object URL directly. The server re-checks organization membership
+  // before signing, so the bucket itself can stay private.
+  const handleDownload = async (doc: { id: number; fileName: string }) => {
+    setErrorMsg(null);
+    try {
+      const { url } = await getDownloadUrlMutation.mutateAsync({ id: doc.id });
       const tempLink = document.createElement("a");
-      tempLink.href = blobUrl;
-      tempLink.download = doc.fileName.endsWith(".txt") ? doc.fileName : `${doc.fileName}.txt`;
-      document.body.appendChild(tempLink);
-      tempLink.click();
-      document.body.removeChild(tempLink);
-      URL.revokeObjectURL(blobUrl);
-    } else {
-      const tempLink = document.createElement("a");
-      tempLink.href = doc.url;
+      tempLink.href = url;
       tempLink.download = doc.fileName;
       tempLink.target = "_blank";
+      tempLink.rel = "noopener";
       document.body.appendChild(tempLink);
       tempLink.click();
       document.body.removeChild(tempLink);
+    } catch (err) {
+      setErrorMsg(
+        err instanceof Error ? err.message : "Could not prepare that download. Please try again."
+      );
     }
   };
 

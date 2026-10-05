@@ -9,7 +9,7 @@ import {
   requireOnboardedOrganizationRole as requireOrganizationRole,
 } from "./queries/organizations";
 import { MAX_UPLOAD_BYTES, isAllowedUploadMimeType } from "./lib/uploads";
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { localFileUrl, isLocalFileUrl, fileKeyFromLocalUrl, deleteLocalFile } from "./lib/localStorage";
 
@@ -31,7 +31,71 @@ if (s3AccessKey && s3SecretKey) {
   });
 }
 
+// Recovers the S3 object key from the URL stored in documents.url. The two
+// shapes this app writes are the only ones that need handling:
+//   custom endpoint (R2/MinIO):  {endpoint}/{bucket}/{key}
+//   AWS:                         https://{bucket}.s3.{region}.amazonaws.com/{key}
+// Returns null for anything else (e.g. a local-storage URL), so callers fall
+// back rather than handing out a signed URL for an object that isn't there.
+function s3KeyFromStoredUrl(url: string): string | null {
+  if (!s3Bucket) return null;
+  try {
+    const { pathname } = new URL(url);
+    const path = decodeURIComponent(pathname.replace(/^\/+/, ""));
+    if (s3Endpoint) {
+      const prefix = `${s3Bucket}/`;
+      return path.startsWith(prefix) ? path.slice(prefix.length) : null;
+    }
+    return path || null;
+  } catch {
+    return null;
+  }
+}
+
 export const documentRouter = createRouter({
+  // Issues a short-lived, signed download URL for one document after checking
+  // that the caller actually belongs to the owning organization.
+  //
+  // Before this, the frontend navigated straight to documents.url — a direct
+  // bucket URL. That left only two possibilities, both wrong: a private bucket
+  // broke every download, or a public bucket exposed every tenant's uploads to
+  // anyone who had or could guess a URL (the key shape is predictable and the
+  // organization id is a small integer). Signing here mirrors what the call
+  // recording proxy in api/boot.ts already does correctly.
+  getDownloadUrl: authedQuery
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      const doc = await getDb().query.documents.findFirst({
+        where: eq(documents.id, input.id),
+      });
+      if (!doc) throw new TRPCError({ code: "NOT_FOUND", message: "Document not found" });
+
+      await requireOrganizationMembership(ctx.user.id, doc.organizationId);
+
+      // Local-disk storage is already served through an authenticated route
+      // that performs its own membership check, so the stored URL is safe to
+      // hand back as-is.
+      if (isLocalFileUrl(doc.url)) {
+        return { url: doc.url, fileName: doc.fileName, signed: false };
+      }
+
+      const key = s3Client && s3Bucket ? s3KeyFromStoredUrl(doc.url) : null;
+      if (!key) {
+        // Nothing we can sign — most likely a document row created before S3
+        // was configured. Returning the stored URL keeps old attachments
+        // reachable instead of failing outright.
+        return { url: doc.url, fileName: doc.fileName, signed: false };
+      }
+
+      const command = new GetObjectCommand({
+        Bucket: s3Bucket,
+        Key: key,
+        ResponseContentDisposition: `attachment; filename="${doc.fileName.replace(/"/g, "")}"`,
+      });
+      const url = await getSignedUrl(s3Client!, command, { expiresIn: 300 });
+      return { url, fileName: doc.fileName, signed: true };
+    }),
+
   getPresignedUploadUrl: authedQuery
     .input(
       z.object({

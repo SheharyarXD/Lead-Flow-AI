@@ -22,10 +22,16 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
 
-  // Forgot password views sub-state
-  const [showForgot, setShowForgot] = useState<"forgot" | "reset" | null>(null);
+  // Forgot password views sub-state. A reset email links back here as
+  // /login?reset_token=... — seeding the state from that param opens the reset
+  // form with the token already filled in, instead of dropping the recipient on
+  // a plain sign-in screen and making them copy it out of the message by hand.
+  const resetTokenFromLink = searchParams.get("reset_token") ?? "";
+  const [showForgot, setShowForgot] = useState<"forgot" | "reset" | null>(
+    resetTokenFromLink ? "reset" : null
+  );
   const [forgotEmail, setForgotEmail] = useState("");
-  const [resetToken, setResetToken] = useState("");
+  const [resetToken, setResetToken] = useState(resetTokenFromLink);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   
@@ -65,7 +71,9 @@ export default function Login() {
 
   const forgotMutation = trpc.auth.forgotPassword.useMutation({
     onSuccess: (data) => {
-      setSuccessMessage("Instructions sent. If in development mode, please copy the reset token below.");
+      setSuccessMessage(
+        "If that email is registered, a reset link is on its way. Paste the token from the email below, or just follow the link."
+      );
       if (data && "resetToken" in data && data.resetToken) {
         setResetToken(data.resetToken);
       }

@@ -1,4 +1,5 @@
 import { getDb } from "./connection";
+import { SAFE_USER_COLUMNS } from "./userColumns";
 import { organizations, organizationMembers, organizationInvitations, subscriptions } from "@db/schema";
 import { eq, and } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
@@ -138,7 +139,7 @@ export async function findOrganizationMembers(organizationId: number) {
   return getDb().query.organizationMembers.findMany({
     where: eq(organizationMembers.organizationId, organizationId),
     with: {
-      user: true,
+      user: { columns: SAFE_USER_COLUMNS },
     },
   });
 }

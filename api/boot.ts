@@ -695,11 +695,12 @@ app.post("/api/webhooks/stripe", async (c) => {
             if (stripeSub.trial_end) {
               trialEndsAt = new Date(stripeSub.trial_end * 1000);
             }
-            if (stripeSub.current_period_start) {
-              periodStart = new Date(stripeSub.current_period_start * 1000);
+            const subPeriod = stripeSub as import("stripe").default.Subscription & { current_period_start?: number; current_period_end?: number };
+            if (subPeriod.current_period_start) {
+              periodStart = new Date(subPeriod.current_period_start * 1000);
             }
-            if (stripeSub.current_period_end) {
-              periodEnd = new Date(stripeSub.current_period_end * 1000);
+            if (subPeriod.current_period_end) {
+              periodEnd = new Date(subPeriod.current_period_end * 1000);
             }
           } catch (fetchErr) {
             console.warn("Could not retrieve subscription during checkout.session.completed:", fetchErr);
@@ -756,6 +757,7 @@ app.post("/api/webhooks/stripe", async (c) => {
           : null;
 
         const trialEndsAt = sub.trial_end ? new Date(sub.trial_end * 1000) : null;
+        const subPeriod = sub as import("stripe").default.Subscription & { current_period_start?: number; current_period_end?: number };
 
         await db
           .update(subscriptions)
@@ -766,8 +768,8 @@ app.post("/api/webhooks/stripe", async (c) => {
             ...(plan ? { plan, ...PLAN_LIMITS[plan] } : {}),
             cancelAtPeriodEnd: !!sub.cancel_at_period_end,
             trialEndsAt: trialEndsAt ?? local.trialEndsAt,
-            currentPeriodStart: sub.current_period_start ? new Date(sub.current_period_start * 1000) : local.currentPeriodStart,
-            currentPeriodEnd: sub.current_period_end ? new Date(sub.current_period_end * 1000) : local.currentPeriodEnd,
+            currentPeriodStart: subPeriod.current_period_start ? new Date(subPeriod.current_period_start * 1000) : local.currentPeriodStart,
+            currentPeriodEnd: subPeriod.current_period_end ? new Date(subPeriod.current_period_end * 1000) : local.currentPeriodEnd,
             discountSummary,
             discountEndsAt,
           })
@@ -791,7 +793,7 @@ app.post("/api/webhooks/stripe", async (c) => {
       }
     } else if (event.type === "invoice.payment_failed") {
       const invoice = event.data.object as import("stripe").default.Invoice;
-      const subscriptionRef = (invoice as any).parent?.subscription_details?.subscription || invoice.subscription;
+      const subscriptionRef = (invoice as any).parent?.subscription_details?.subscription || (invoice as any).subscription;
       const subscriptionId = typeof subscriptionRef === "string" ? subscriptionRef : subscriptionRef?.id ?? null;
       const local = await findSubByStripeIds(invoice.customer as string, subscriptionId);
       if (local) {
@@ -800,7 +802,7 @@ app.post("/api/webhooks/stripe", async (c) => {
       }
     } else if (event.type === "invoice.paid") {
       const invoice = event.data.object as import("stripe").default.Invoice;
-      const subscriptionRef = (invoice as any).parent?.subscription_details?.subscription || invoice.subscription;
+      const subscriptionRef = (invoice as any).parent?.subscription_details?.subscription || (invoice as any).subscription;
       const subscriptionId = typeof subscriptionRef === "string" ? subscriptionRef : subscriptionRef?.id ?? null;
       const local = await findSubByStripeIds(invoice.customer as string, subscriptionId);
       if (local) {

@@ -1,4 +1,5 @@
 import { getDb } from "./connection";
+import { SAFE_USER_COLUMNS } from "./userColumns";
 import { calls } from "@db/schema";
 import { eq, and, or, desc, count, sql, like, gte, lte } from "drizzle-orm";
 import type { InferInsertModel } from "drizzle-orm";
@@ -37,7 +38,7 @@ export async function findCallsByOrganization(organizationId: number, filters?: 
     with: {
       customer: true,
       lead: true,
-      assignedUser: true,
+      assignedUser: { columns: SAFE_USER_COLUMNS },
     },
     orderBy: [desc(calls.createdAt)],
     limit,
@@ -51,7 +52,7 @@ export async function findCallById(id: number) {
     with: {
       customer: true,
       lead: true,
-      assignedUser: true,
+      assignedUser: { columns: SAFE_USER_COLUMNS },
     },
   });
 }

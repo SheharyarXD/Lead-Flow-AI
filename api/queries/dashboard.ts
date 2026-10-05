@@ -1,4 +1,5 @@
 import { getDb } from "./connection";
+import { SAFE_USER_COLUMNS } from "./userColumns";
 import { leads, conversations, calls, tasks, appointments, activities, subscriptions, organizations, customers, messages, organizationMembers } from "@db/schema";
 import { eq, and, gte, desc, count, sql } from "drizzle-orm";
 
@@ -180,7 +181,7 @@ export async function getReportsStats(organizationId: number) {
   const members = await db.query.organizationMembers.findMany({
     where: eq(organizationMembers.organizationId, organizationId),
     with: {
-      user: true,
+      user: { columns: SAFE_USER_COLUMNS },
     },
   });
 

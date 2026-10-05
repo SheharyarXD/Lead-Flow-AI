@@ -15,7 +15,6 @@ import {
   PRODUCT_NAME,
   TRIAL_DAYS,
   getUsageSnapshot,
-  PlanId,
 } from "./lib/billing";
 import Stripe from "stripe";
 
@@ -328,4 +327,3 @@ export const billingRouter = createRouter({
       return { url: portalSession.url };
     }),
 });
-

@@ -1,4 +1,5 @@
 import { getDb } from "./connection";
+import { SAFE_USER_COLUMNS } from "./userColumns";
 import { conversations, messages } from "@db/schema";
 import { eq, and, desc, count, sql } from "drizzle-orm";
 import type { InferInsertModel } from "drizzle-orm";
@@ -27,7 +28,7 @@ export async function findConversationsByOrganization(organizationId: number, fi
     with: {
       customer: true,
       lead: true,
-      assignedUser: true,
+      assignedUser: { columns: SAFE_USER_COLUMNS },
     },
     orderBy: [desc(conversations.lastMessageAt)],
     limit,
@@ -41,7 +42,7 @@ export async function findConversationById(id: number) {
     with: {
       customer: true,
       lead: true,
-      assignedUser: true,
+      assignedUser: { columns: SAFE_USER_COLUMNS },
       messages: {
         orderBy: [messages.createdAt],
       },

@@ -1,4 +1,5 @@
 import { getDb } from "./connection";
+import { SAFE_USER_COLUMNS } from "./userColumns";
 import { leads, appointments, customers, users, conversations, tasks, calls } from "@db/schema";
 import { eq, and, desc, like, or, sql, count, gte } from "drizzle-orm";
 import type { InferInsertModel } from "drizzle-orm";
@@ -50,7 +51,7 @@ export async function findLeadsByOrganization(organizationId: number, filters?: 
     where: and(...conditions),
     with: {
       customer: true,
-      assignedUser: true,
+      assignedUser: { columns: SAFE_USER_COLUMNS },
       appointments: {
         orderBy: [desc(appointments.startTime)],
       },
@@ -101,6 +102,7 @@ export async function findLeadById(id: number) {
   if (leadRow.assignedTo) {
     assignedUserVal = await db.query.users.findFirst({
       where: eq(users.id, leadRow.assignedTo),
+      columns: SAFE_USER_COLUMNS,
     }) ?? null;
   }
 

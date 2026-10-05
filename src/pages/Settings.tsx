@@ -39,13 +39,11 @@ import {
   X,
   AlertTriangle,
   CheckCircle2,
-  Calendar,
   ExternalLink,
   ShieldCheck,
   Clock,
   Sparkles,
   RefreshCw,
-  HelpCircle,
 } from "lucide-react";
 
 function formatZodError(message: string): string {
@@ -88,7 +86,6 @@ export default function Settings() {
   const [searchParams, setSearchParams] = useSearchParams();
   const currentTab = searchParams.get("tab") || "business";
   const checkoutParam = searchParams.get("checkout");
-  const onboardingParam = searchParams.get("onboarding");
 
   // Cancellation Survey State
   const [cancelModalOpen, setCancelModalOpen] = useState(false);

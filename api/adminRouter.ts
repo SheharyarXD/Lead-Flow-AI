@@ -3,6 +3,7 @@ import { createRouter, adminQuery } from "./middleware";
 import { getDb } from "./queries/connection";
 import { users, organizations, organizationMembers, activities } from "@db/schema";
 import { count, desc, eq } from "drizzle-orm";
+import { SAFE_USER_COLUMNS } from "./queries/userColumns";
 
 export const adminRouter = createRouter({
   stats: adminQuery.query(async () => {
@@ -26,6 +27,7 @@ export const adminRouter = createRouter({
     )
     .query(async ({ input }) => {
       return getDb().query.users.findMany({
+        columns: SAFE_USER_COLUMNS,
         orderBy: [desc(users.createdAt)],
         limit: input.limit ?? 50,
         offset: input.offset ?? 0,
@@ -49,7 +51,7 @@ export const adminRouter = createRouter({
         offset: input.offset ?? 0,
         with: {
           subscription: true,
-          members: { with: { user: true } },
+          members: { with: { user: { columns: SAFE_USER_COLUMNS } } },
         },
       });
     }),
