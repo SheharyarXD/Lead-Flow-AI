@@ -60,8 +60,23 @@ export async function getUsageSnapshot(organizationId: number) {
     daysRemainingInTrial = Math.max(0, Math.ceil((trialEnd - now) / (1000 * 60 * 60 * 24)));
   }
 
-  const isTrialActive = sub?.status === "trialing" && (trialEnd ? trialEnd > now : true);
-  const isPaidActive = sub?.status === "active";
+  // Stripe is the source of truth for entitlement, so a local status alone is
+  // not enough to grant access once Stripe is actually configured. Legacy rows
+  // exist from before billing was introduced that carry status "active" with
+  // no Stripe customer or subscription behind them; honouring those would
+  // reopen exactly the hole this gate closes (a tenant using the product
+  // forever without a subscription).
+  //
+  // When no Stripe key is configured at all (local development), fall back to
+  // the stored status so the simulated checkout path in billingRouter still
+  // works for testing.
+  const stripeConfigured = !!process.env.STRIPE_SECRET_KEY;
+  const stripeLinked = !!sub?.stripeSubscriptionId;
+  const entitlementVerified = !stripeConfigured || stripeLinked;
+
+  const isTrialActive =
+    sub?.status === "trialing" && (trialEnd ? trialEnd > now : true) && entitlementVerified;
+  const isPaidActive = sub?.status === "active" && entitlementVerified;
   const hasAccess = isPaidActive || isTrialActive;
 
   return {
@@ -77,6 +92,7 @@ export async function getUsageSnapshot(organizationId: number) {
     isTrialActive,
     isPaidActive,
     hasAccess,
+    entitlementVerified,
     daysRemainingInTrial,
     trialEndsAt: sub?.trialEndsAt ?? null,
     currentPeriodStart: sub?.currentPeriodStart ?? null,
@@ -106,6 +122,17 @@ export async function assertSubscriptionActive(organizationId: number) {
       throw new TRPCError({
         code: "FORBIDDEN",
         message: "Your LeadFlow Pro subscription has been cancelled. Please re-activate under Settings > Billing.",
+      });
+    }
+    // A stored status that claims access but has no Stripe subscription behind
+    // it. Pre-billing legacy rows look like this; the customer has genuinely
+    // never been through checkout, so say so plainly rather than implying a
+    // payment problem.
+    if (!usage.entitlementVerified) {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message:
+          "No active LeadFlow Pro subscription is linked to this organization. Start your 30-day free trial under Settings > Billing.",
       });
     }
     throw new TRPCError({

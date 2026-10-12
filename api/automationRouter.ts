@@ -10,7 +10,7 @@ import {
   deleteAutomation,
   getAutomationStats,
 } from "./queries/automations";
-import { requireOnboardedOrganizationMembership as requireOrganizationMembership, requireOnboardedOrganizationRole as requireOrganizationRole } from "./queries/organizations";
+import { requireSubscribedOrganizationMembership as requireOrganizationMembership, requireSubscribedOrganizationRole as requireOrganizationRole } from "./queries/organizations";
 import { runAutomationById } from "./lib/automations";
 import { findLeadById } from "./queries/leads";
 import { findCustomerById } from "./queries/customers";

@@ -9,7 +9,7 @@ import {
   deleteAppointment,
   getAppointmentStats,
 } from "./queries/appointments";
-import { requireOnboardedOrganizationMembership as requireOrganizationMembership, requireOnboardedOrganizationRole as requireOrganizationRole } from "./queries/organizations";
+import { requireSubscribedOrganizationMembership as requireOrganizationMembership, requireSubscribedOrganizationRole as requireOrganizationRole } from "./queries/organizations";
 import { createActivity } from "./queries/activities";
 import { emitAutomationEvent } from "./lib/automations";
 import { findLeadById } from "./queries/leads";

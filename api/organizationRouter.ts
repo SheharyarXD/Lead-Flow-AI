@@ -67,9 +67,17 @@ export const organizationRouter = createRouter({
   getDefaultSubscription: authedQuery.query(async ({ ctx }) => {
     const defaultOrg = await findUserDefaultOrganization(ctx.user.id);
     if (!defaultOrg) return null;
-    return getDb().query.subscriptions.findFirst({
+    const sub = await getDb().query.subscriptions.findFirst({
       where: eq(subscriptions.organizationId, defaultOrg.id),
     });
+    if (!sub) return null;
+    // hasAccess is computed server-side by the same function the API gate uses,
+    // so the sidebar/route guard can never disagree with what the API actually
+    // permits. The guard must not re-derive entitlement from the raw status,
+    // because a status alone does not prove a Stripe subscription exists.
+    const { getUsageSnapshot } = await import("./lib/billing");
+    const usage = await getUsageSnapshot(defaultOrg.id);
+    return { ...sub, hasAccess: usage.hasAccess, entitlementVerified: usage.entitlementVerified };
   }),
 
   getById: authedQuery

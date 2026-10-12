@@ -98,6 +98,36 @@ export async function requireOnboardedOrganizationRole(userId: number, organizat
   return membership;
 }
 
+// Gate used by every router that serves the paid product surface: dashboard,
+// leads, customers, conversations, calls, appointments, tasks, automations,
+// activities and documents.
+//
+// Membership and onboarding alone used to be the whole gate, which meant an
+// organization with no subscription at all could sign up, finish onboarding
+// and then use the entire application indefinitely without ever reaching
+// checkout — payment was effectively optional. assertSubscriptionActive was
+// already written but was only reached from the three quota helpers (leads,
+// seats, call minutes), so it only ever fired on those specific writes.
+//
+// Deliberately NOT applied to: authRouter (sign in/up), organizationRouter
+// (profile, onboarding, team), knowledgeBaseRouter (populated during
+// onboarding), billingRouter (you must be able to reach checkout without a
+// subscription, or nobody could ever buy one) and adminRouter (platform
+// operator, not a tenant). Gating those would lock an owner out of their own
+// account before they ever had a chance to pay.
+export async function requireSubscribedOrganizationMembership(userId: number, organizationId: number) {
+  const membership = await requireOnboardedOrganizationMembership(userId, organizationId);
+  const { assertSubscriptionActive } = await import("../lib/billing");
+  await assertSubscriptionActive(organizationId);
+  return membership;
+}
+
+export async function requireSubscribedOrganizationRole(userId: number, organizationId: number, roles: Array<"owner" | "admin" | "manager" | "member">) {
+  const membership = await requireSubscribedOrganizationMembership(userId, organizationId);
+  if (!roles.includes(membership.role)) throw new TRPCError({ code: "FORBIDDEN", message: "Your organization role cannot perform this action" });
+  return membership;
+}
+
 export async function createOrganization(data: InferInsertModel<typeof organizations>) {
   try {
     const [result] = await getDb().insert(organizations).values(data).$returningId();

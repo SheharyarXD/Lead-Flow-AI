@@ -5,8 +5,8 @@ import { eq, and, desc } from "drizzle-orm";
 import { documents, activities } from "@db/schema";
 import { getDb } from "./queries/connection";
 import {
-  requireOnboardedOrganizationMembership as requireOrganizationMembership,
-  requireOnboardedOrganizationRole as requireOrganizationRole,
+  requireSubscribedOrganizationMembership as requireOrganizationMembership,
+  requireSubscribedOrganizationRole as requireOrganizationRole,
 } from "./queries/organizations";
 import { MAX_UPLOAD_BYTES, isAllowedUploadMimeType } from "./lib/uploads";
 import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";

@@ -11,7 +11,7 @@ import {
 } from "./queries/calls";
 import { findLeadById } from "./queries/leads";
 import { findCustomerById } from "./queries/customers";
-import { findOrganizationById, requireOnboardedOrganizationMembership as requireOrganizationMembership, requireOnboardedOrganizationRole as requireOrganizationRole } from "./queries/organizations";
+import { findOrganizationById, requireSubscribedOrganizationMembership as requireOrganizationMembership, requireSubscribedOrganizationRole as requireOrganizationRole } from "./queries/organizations";
 import { createActivity } from "./queries/activities";
 import { decryptSecret } from "./lib/crypto";
 import { generateTwilioVoiceToken, resolveTwilioCallConfig } from "./lib/twilio";

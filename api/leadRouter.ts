@@ -10,7 +10,7 @@ import {
   getLeadStats,
   countLeadsByOrganization,
 } from "./queries/leads";
-import { requireOnboardedOrganizationMembership as requireOrganizationMembership, requireOnboardedOrganizationRole as requireOrganizationRole } from "./queries/organizations";
+import { requireSubscribedOrganizationMembership as requireOrganizationMembership, requireSubscribedOrganizationRole as requireOrganizationRole } from "./queries/organizations";
 import { createTask } from "./queries/tasks";
 import { createActivity } from "./queries/activities";
 import { assertLeadsLimitNotExceeded } from "./lib/billing";

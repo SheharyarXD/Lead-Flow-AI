@@ -141,6 +141,29 @@ export default function Layout() {
     return <Navigate to="/" replace />;
   }
 
+  // Paid-surface gate. Stripe is the source of truth: this only reads the
+  // subscription row that the Stripe webhooks maintain, it never infers access
+  // from anything the browser did (starting checkout is not access).
+  //
+  // The server enforces the same rule independently in
+  // requireSubscribedOrganizationMembership, so this is purely so the user
+  // lands on the billing page rather than on a dashboard full of permission
+  // errors. Settings stays reachable because that is where checkout lives, and
+  // /admin stays reachable because a platform operator is not a paying tenant.
+  const hasBillingAccess = subscription?.hasAccess === true;
+
+  const billingExemptPath =
+    location.pathname === "/settings" || location.pathname === "/admin";
+
+  if (
+    organization?.onboardingCompletedAt &&
+    !subLoading &&
+    !hasBillingAccess &&
+    !billingExemptPath
+  ) {
+    return <Navigate to="/settings?tab=billing" replace />;
+  }
+
   if (location.pathname === "/onboarding") {
     return (
       <div className="min-h-screen w-full bg-zinc-50/50">

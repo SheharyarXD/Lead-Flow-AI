@@ -9,7 +9,7 @@ import {
   deleteTask,
   getTaskStats,
 } from "./queries/tasks";
-import { requireOnboardedOrganizationMembership as requireOrganizationMembership, requireOnboardedOrganizationRole as requireOrganizationRole } from "./queries/organizations";
+import { requireSubscribedOrganizationMembership as requireOrganizationMembership, requireSubscribedOrganizationRole as requireOrganizationRole } from "./queries/organizations";
 import { createActivity } from "./queries/activities";
 
 export const taskRouter = createRouter({

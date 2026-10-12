@@ -9,7 +9,7 @@ import {
   deleteCustomer,
   countCustomersByOrganization,
 } from "./queries/customers";
-import { requireOnboardedOrganizationMembership as requireOrganizationMembership, requireOnboardedOrganizationRole as requireOrganizationRole } from "./queries/organizations";
+import { requireSubscribedOrganizationMembership as requireOrganizationMembership, requireSubscribedOrganizationRole as requireOrganizationRole } from "./queries/organizations";
 import { createActivity } from "./queries/activities";
 
 export const customerRouter = createRouter({

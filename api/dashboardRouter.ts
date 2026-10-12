@@ -7,7 +7,7 @@ import {
   getUpcomingAppointments,
   getReportsStats,
 } from "./queries/dashboard";
-import { requireOnboardedOrganizationMembership as requireOrganizationMembership } from "./queries/organizations";
+import { requireSubscribedOrganizationMembership as requireOrganizationMembership } from "./queries/organizations";
 
 export const dashboardRouter = createRouter({
   stats: authedQuery

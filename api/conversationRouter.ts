@@ -12,7 +12,7 @@ import {
   createMessage,
   getConversationStats,
 } from "./queries/conversations";
-import { requireOnboardedOrganizationMembership as requireOrganizationMembership, requireOnboardedOrganizationRole as requireOrganizationRole } from "./queries/organizations";
+import { requireSubscribedOrganizationMembership as requireOrganizationMembership, requireSubscribedOrganizationRole as requireOrganizationRole } from "./queries/organizations";
 import { createActivity } from "./queries/activities";
 import { triggerAIAutoReply } from "./lib/ai-agent";
 import { emitAutomationEvent } from "./lib/automations";
